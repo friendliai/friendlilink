@@ -2,9 +2,9 @@
 
 ![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)
 
-> Use [Friendli AI](https://friendli.ai/) models in Claude Code, OpenCode, Codex, Pi, Cursor, Hermes Agent, and DeepSeek Harness.
+> Use [FriendliAI](https://friendli.ai/) models in Claude Code, OpenCode, Codex, Pi, Cursor, Hermes Agent, and DeepSeek Harness.
 
-`frlink` wires the agent's provider settings (API key, base URL, model) to run through Friendli, and can restore the original settings just as easily.
+`frlink` wires the agent's provider settings (API key, base URL, model) to run through FriendliAI, and can restore the original settings just as easily.
 
 Supported agents: **Claude Code CLI**, **Cursor Desktop / IDE**, **Codex CLI**, **OpenCode**, **Pi**, **Hermes Agent**, **DeepSeek Harness**.
 
@@ -15,15 +15,14 @@ Supported agents: **Claude Code CLI**, **Cursor Desktop / IDE**, **Codex CLI**, 
 - [Enabling a harness](#enabling-a-harness)
   - [Checking what's installed on your machine](#checking-whats-installed-on-your-machine)
   - [Connect a harness](#connect-a-harness)
-  - [All harnesses at once](#all-harnesses-at-once)
   - [Verify connection](#verify-connection)
+  - [Restore settings](#restore-settings)
 - [Per-harness guides](#claude-code)
   - [Claude Code](#claude-code)
   - [Cursor](#cursor)
   - [Hermes Agent](#hermes-agent)
   - [DeepSeek Harness (dsh)](#deepseek-harness-dsh)
 - [All commands](#all-commands)
-- [Aliases](#aliases)
 
 ## Install
 
@@ -52,6 +51,15 @@ Grab your API key at [Friendli Suite](https://friendli.ai/suite), then:
 frlink login
 ```
 
+This saves the key to the OS keychain. If the keychain is unavailable or the write cannot be verified, `frlink` warns and falls back to `~/.frlink/.api-key` with owner-only permissions.
+
+`logout` removes the key saved by `frlink`, including the fallback file. It does not disable agents or remove keys already written to their configurations. To disconnect everything, run:
+
+```bash
+frlink all off
+frlink logout
+```
+
 ## Enabling a harness
 
 ### Checking what's installed on your machine
@@ -73,7 +81,9 @@ Where `<agent>` is one of: `claude`, `cursor`, `codex`, `opencode`, `pi`, `herme
 frlink <agent> on
 ```
 
-### All harnesses at once
+`on` configures the agent to use FriendliAI.
+
+To manage all installed agents at once:
 
 ```bash
 frlink all on
@@ -88,8 +98,11 @@ frlink: Hermes Agent is already routed through FriendliAI — left untouched.
 ### Verify connection
 
 ```bash
+frlink <agent> status
 frlink check status
 ```
+
+`status` shows the agent's current routing status.
 
 ```text
 FriendliAI API key: saved
@@ -105,11 +118,20 @@ FriendliAI API key: saved
 Agents frlink has not connected report `not routed` — they are still on their
 own provider.
 
+### Restore settings
+
+```bash
+frlink <agent> off
+frlink all off
+```
+
+`off` restores the configuration saved before `on`.
+
 ---
 
 ## Claude Code
 
-Claude Code routes through per-slot model mapping — pick a Friendli model for each of Claude Code's model slots, either interactively or with flags:
+Claude Code routes through per-slot model mapping — pick a FriendliAI model for each of Claude Code's model slots, either interactively or with flags:
 
 ```bash
 frlink claude on
@@ -125,7 +147,9 @@ claude: routed through FriendliAI.
 
 ## Cursor
 
-FriendliAI Model APIs work in Cursor's local chat, so open a folder before you use one. Cloud Agents — "Build in Cloud", "Start from scratch", Automations, and the Web/iOS/Slack/GitHub/Linear/API surfaces — run on Cursor's infrastructure and cannot use a model running with custom API key.
+- Launch and quit Cursor once before the first `on`. Keep it fully closed while its settings are being changed. Commands run from Cursor's terminal are queued until Cursor exits.
+- `on` registers the FriendliAI catalog. Choose a model from each conversation's model picker. Cursor does not accept `--model`.
+- Cursor Cloud Agents—including Build in Cloud, Start from Scratch, Automations, and the Web, iOS, Slack, GitHub, Linear, and API surfaces—cannot use models configured with a custom API key.
 
 ## Hermes Agent
 

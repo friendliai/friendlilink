@@ -1,6 +1,6 @@
 {
   "name": "frlink",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Point your coding agent at Friendli's OpenAI- and Anthropic-compatible gateway",
   "type": "module",
   "bin": {

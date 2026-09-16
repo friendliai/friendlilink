@@ -4,6 +4,9 @@
 set -euo pipefail
 
 MIN_NODE_MAJOR=18
+# Cloned when the script is piped in and FRLINK_SOURCE is unset, so the
+# documented `curl ... | bash` one-liner works with nothing else set.
+DEFAULT_SOURCE="https://github.com/friendliai/friendlilink.git"
 # An explicit override always wins, including when the directory does not
 # exist yet.
 if [ -n "${FRLINK_HOME:-}" ]; then
@@ -42,9 +45,8 @@ check_node() {
 }
 
 # Prefer an existing local checkout (e.g. `./install.sh` run inside the repo).
-# Falls back to cloning FRLINK_SOURCE (a git URL the caller must
-# supply) when the script was piped in and no local checkout exists — this
-# installer never assumes a hardcoded remote.
+# Falls back to cloning FRLINK_SOURCE (default: DEFAULT_SOURCE) when the
+# script was piped in and no local checkout exists.
 resolve_source_dir() {
   local self="${BASH_SOURCE[0]:-}"
   if [ -n "$self" ] && [ -f "$self" ]; then
@@ -60,20 +62,15 @@ resolve_source_dir() {
     fi
   fi
 
-  SOURCE_URL="${FRLINK_SOURCE:-}"
-  if [ -n "$SOURCE_URL" ]; then
-    if [ -d "$CLONE_DIR/.git" ]; then
-      log "Updating existing checkout at $CLONE_DIR ..." >&2
-      git -C "$CLONE_DIR" pull --ff-only
-    else
-      log "Cloning $SOURCE_URL into $CLONE_DIR ..." >&2
-      git clone --depth 1 "$SOURCE_URL" "$CLONE_DIR"
-    fi
-    echo "$CLONE_DIR"
-    return
+  local source_url="${FRLINK_SOURCE:-$DEFAULT_SOURCE}"
+  if [ -d "$CLONE_DIR/.git" ]; then
+    log "Updating existing checkout at $CLONE_DIR ..." >&2
+    git -C "$CLONE_DIR" pull --ff-only
+  else
+    log "Cloning $source_url into $CLONE_DIR ..." >&2
+    git clone --depth 1 "$source_url" "$CLONE_DIR"
   fi
-
-  die "Run this from inside a frlink checkout (./install.sh), or set FRLINK_SOURCE=<git-url> so it can clone one."
+  echo "$CLONE_DIR"
 }
 
 build_source() {
