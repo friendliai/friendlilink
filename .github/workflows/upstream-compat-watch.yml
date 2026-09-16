@@ -1,0 +1,118 @@
+name: Upstream compat watch
+
+# Daily upstream compat watch (plan v4):
+#   detect  — npm `latest` diff vs scripts/upstream-check/versions.json
+#   unit-e2e — per CHANGED harness only: install the new version, run that
+#              harness's unit suite in a sandbox HOME; if unit fails, e2e is
+#              skipped (user rule 2). e2e is currently a not-implemented stub.
+#   notify  — Slack via SLACK_WEBHOOK_URL: version update + unit + e2e
+#              results, heartbeat line on no-change days.
+#
+# versions.json is committed only when every unit run passed — a failing
+# version retries (and re-alerts) the next day.
+
+on:
+  schedule:
+    - cron: "0 2 * * *" # 11:00 KST
+  workflow_dispatch:
+
+# Default read-only; only the commit job escalates to contents: write. The
+# unit-e2e job executes lifecycle scripts of newly published upstream npm
+# packages — it must never hold push credentials.
+permissions:
+  contents: read
+
+concurrency:
+  group: upstream-compat-watch
+  cancel-in-progress: false
+
+jobs:
+  detect:
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.check.outputs.changed }}
+      matrix: ${{ steps.check.outputs.matrix }}
+      versions: ${{ steps.check.outputs.versions }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Diff upstream versions
+        id: check
+        run: node scripts/upstream-check/check.mjs
+
+  unit-e2e:
+    needs: detect
+    if: needs.detect.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.detect.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 22
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - name: Install ${{ matrix.name }} ${{ matrix.to }} and run unit tests
+        id: unit
+        run: bash scripts/upstream-check/install-and-test.sh ${{ matrix.name }} ${{ matrix.to }}
+      - name: e2e (${{ matrix.name }})
+        id: e2e
+        if: steps.unit.outcome == 'success'
+        run: node scripts/upstream-check/e2e.mjs ${{ matrix.name }} ${{ matrix.from }} ${{ matrix.to }}
+  notify:
+    needs: [detect, unit-e2e]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Assemble results and notify
+        if: needs.detect.outputs.changed == 'true'
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          CHANGED: ${{ needs.detect.outputs.matrix }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          # Per-leg unit verdicts from the Actions jobs API — the aggregate
+          # matrix result can't tell which harness failed.
+          UNIT_RESULTS="$(node scripts/upstream-check/unit-results.mjs)"
+          export UNIT_RESULTS
+          node scripts/upstream-check/notify.mjs
+      - name: Heartbeat (never on a failed detect — an empty `changed` output
+          must not masquerade as "no changes")
+        if: needs.detect.result == 'success' && needs.detect.outputs.changed != 'true'
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          MODE: heartbeat
+        run: node scripts/upstream-check/notify.mjs
+      - name: Notify on detect failure
+        if: needs.detect.result != 'success'
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          CHANGED='[{"name":"detect","pkg":"-","from":"-","to":"-","unit":"fail","e2e":"skipped (unit failed)"}]' \
+            MODE=report node scripts/upstream-check/notify.mjs
+
+  snapshot:
+    # Isolated commit job: the only place with contents: write. kept apart
+    # from notify so the read-only default covers every job that runs
+    # upstream lifecycle scripts.
+    needs: [detect, unit-e2e]
+    if: needs.detect.outputs.changed == 'true' && needs.unit-e2e.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Commit observed versions
+        env:
+          VERSIONS: ${{ needs.detect.outputs.versions }}
+        run: |
+          git config user.name "friendliconnect-bot"
+          git config user.email "noreply@friendli.ai"
+          printf '%s\n' "$VERSIONS" > scripts/upstream-check/versions.json
+          git add scripts/upstream-check/versions.json
+          git commit -m "chore(upstream-watch): bump observed versions"
+          git push

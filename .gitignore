@@ -1,0 +1,16 @@
+/dist/
+/node_modules/
+
+# Lockfiles are not committed — each package manages its own dependencies
+# locally (npm/pnpm) and lockfiles churn without meaningful review value.
+package-lock.json
+pnpm-lock.yaml
+
+# Left behind by test/keys/auth.test.ts, which uses a temp HOME under the repo
+# root. Untracked and unignored, it is easy to sweep into a commit by accident.
+/.tmp-*/
+.unlazy/
+GATES.md
+
+# Build outputs inside the plugin packages are ignored by each package's own
+# (upstream) .gitignore — no root-level entries needed.

@@ -1,0 +1,12 @@
+# Generated files — not hand-written, not formatted
+package-lock.json
+pnpm-lock.yaml
+dist/
+lib/
+
+# Transient test homes (see test/keys/auth.test.ts)
+/.tmp-*/
+
+# Session tooling state
+.unlazy/
+GATES.md
