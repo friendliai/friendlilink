@@ -1,0 +1,67 @@
+{
+  "name": "@friendliai/dsh-llm-friendli",
+  "version": "0.1.0",
+  "description": "FriendliAI serverless LLM adapter for DeepSeek Harness \u2014 OpenAI-compatible chat completions with dynamic model discovery and reasoning support",
+  "keywords": [
+    "deepseek-harness",
+    "dsh-plugin",
+    "friendli",
+    "friendliai",
+    "llm-adapter"
+  ],
+  "license": "MIT",
+  "author": "FriendliAI",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/friendliai/friendlilink.git",
+    "directory": "packages/dsh-llm-friendli"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/**/*.js",
+    "lib/**/*.d.ts",
+    "cordis.patch.yml"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "prepare": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit -p tsconfig.build.json",
+    "test": "vitest run --exclude '**/*.live.test.ts'",
+    "test:e2e": "vitest run tests/e2e.live.test.ts",
+    "lint:all": "tsc --noEmit -p tsconfig.build.json && vitest run --exclude '**/*.live.test.ts'"
+  },
+  "dependencies": {
+    "eventsource-parser": "^4.1.0"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.2",
+    "@deepseek-ai/dsh-llm": "^0.1.2-rc.1",
+    "@deepseek-ai/schemastery": "^3.18.0"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "^4.0.2",
+    "@deepseek-ai/dsh-llm": "^0.1.2-rc.1",
+    "@deepseek-ai/schemastery": "^3.18.0",
+    "@types/node": "^26.2.0",
+    "typescript": "^7.0.2",
+    "vite": "^7.0.0",
+    "vitest": "^5.0.0"
+  }
+}

@@ -1,0 +1,50 @@
+name: Validate release tags
+
+# Release tags follow the pattern `<artifact>@<semver>` (e.g.
+# `@friendliai/dsh-llm-friendli@0.1.0`, `hermes-friendli-provider@1.0.0`, `frlink@0.1.0`).
+# This workflow verifies that the semver in a pushed tag matches the version
+# string in the artifact's own version file, so a typo'd tag cannot mint a
+# release whose git ref disagrees with the published metadata.
+#
+# No untrusted input is interpolated into run: commands — the only dynamic
+# value is GITHUB_REF_NAME (the tag name), a server-generated context value.
+
+on:
+  push:
+    tags:
+      - "frlink@*"
+      - "@friendliai/dsh-llm-friendli@*"
+      - "hermes-friendli-provider@*"
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Check tag version matches artifact version file
+        run: |
+          tag="$GITHUB_REF_NAME"
+          name="${tag%@*}"
+          ver="${tag##*@}"
+          case "$name" in
+            frlink)
+              file_ver=$(node -p "require('./package.json').version")
+              ;;
+            @friendliai/dsh-llm-friendli)
+              file_ver=$(node -p "require('./packages/dsh-llm-friendli/package.json').version")
+              ;;
+            hermes-friendli-provider)
+              file_ver=$(grep '^version:' packages/hermes-friendli-provider/plugin.yaml | awk '{print $2}')
+              ;;
+            *)
+              echo "unknown artifact tag prefix: $name"
+              exit 1
+              ;;
+          esac
+          echo "tag=$tag  name=$name  tag_version=$ver  file_version=$file_ver"
+          if [ "$ver" != "$file_ver" ]; then
+            echo "MISMATCH: tag version $ver does not match $name version file ($file_ver)"
+            exit 1
+          fi
+          echo "OK: tag $tag matches $name version file"

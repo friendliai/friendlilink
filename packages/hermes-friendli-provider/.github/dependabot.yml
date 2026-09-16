@@ -1,0 +1,10 @@
+version: 2
+updates:
+  # This mirror is synced from friendliai/friendlilink
+  # (packages/hermes-friendli-provider). Python deps are pinned inline in the
+  # plugin source; there is no requirements.txt/pyproject.toml here, so only
+  # workflow action refs are tracked.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"

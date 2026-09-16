@@ -1,0 +1,12 @@
+# Bundle patch shipped inside the npm package — NOT a file users edit.
+# `dsh plugin --profile <name> add @friendliai/dsh-llm-friendli` merges this layer into the
+# profile automatically, registering the `friendli` provider adapter.
+#
+# Every Config field has a default (apiKeyEnv=FRIENDLIAI_API_KEY, providers=[friendli],
+# baseURL=public serverless endpoint), so no config block is needed here. Users
+# export FRIENDLIAI_API_KEY and pick a Friendli model in the dsh web UI — the catalog
+# is fetched live from GET /models. Override any default in the profile's own
+# cordis.patch.yml without touching this package.
+- insert:
+    - id: "@friendliai/dsh-llm-friendli"
+      name: "@friendliai/dsh-llm-friendli"

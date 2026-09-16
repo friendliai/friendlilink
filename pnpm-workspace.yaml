@@ -1,0 +1,5 @@
+packages:
+  - "packages/dsh-llm-friendli"
+allowBuilds:
+  esbuild: true
+verifyDepsBeforeRun: false

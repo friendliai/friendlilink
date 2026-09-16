@@ -1,0 +1,43 @@
+version: 2
+updates:
+  # Root CLI (frlink)
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    # Auto-merge buddy (see dependabot-auto-merge.yml): only dev-dep
+    # minor/patch auto-merges; prod deps open normal PRs even when grouped.
+    groups:
+      dev-minor-patch:
+        dependency-type: "development"
+        update-types:
+          - "minor"
+          - "patch"
+      prod-minor-patch:
+        dependency-type: "production"
+        update-types:
+          - "minor"
+          - "patch"
+  # @friendliai/dsh-llm-friendli
+  - package-ecosystem: "npm"
+    directory: "/packages/dsh-llm-friendli"
+    schedule:
+      interval: "weekly"
+    groups:
+      dev-minor-patch:
+        dependency-type: "development"
+        update-types:
+          - "minor"
+          - "patch"
+      prod-minor-patch:
+        dependency-type: "production"
+        update-types:
+          - "minor"
+          - "patch"
+  # Workflow action refs (checkout, setup-node, pnpm/action-setup, fetch-metadata)
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+  # packages/hermes-friendli-provider: no requirements.txt/pyproject.toml —
+  # its deps are pinned inline in ci.yml, nothing for Dependabot to scan.
