@@ -96,7 +96,7 @@ jobs:
             MODE=report node scripts/upstream-check/notify.mjs
 
   snapshot:
-    # Isolated commit job: the only place with contents: write. kept apart
+    # Isolated commit job: the only place with write permissions. Kept apart
     # from notify so the read-only default covers every job that runs
     # upstream lifecycle scripts.
     needs: [detect, unit-e2e]
@@ -104,15 +104,38 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      pull-requests: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - name: Commit observed versions
+        with:
+          token: ${{ secrets.WEB_GITHUB_TOKEN }}
+      - name: Commit observed versions and open PR
         env:
+          GH_TOKEN: ${{ secrets.WEB_GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
           VERSIONS: ${{ needs.detect.outputs.versions }}
         run: |
+          BRANCH=automation/upstream-compat-watch
+          TITLE="chore(upstream-watch): bump observed versions"
+          BODY="Automated upstream compat watch snapshot update."
           git config user.name "friendliconnect-bot"
           git config user.email "noreply@friendli.ai"
+          if git fetch origin "$BRANCH":"$BRANCH"; then
+            git switch "$BRANCH"
+          else
+            git switch --create "$BRANCH"
+          fi
           printf '%s\n' "$VERSIONS" > scripts/upstream-check/versions.json
           git add scripts/upstream-check/versions.json
-          git commit -m "chore(upstream-watch): bump observed versions"
-          git push
+          if git diff --cached --quiet; then
+            echo "versions.json already matches the observed snapshot"
+            if [ -z "$(gh pr list --repo "$REPO" --base main --head "$BRANCH" --state open --json number --jq '.[0].number')" ]; then
+              gh pr create --repo "$REPO" --base main --head "$BRANCH" --title "$TITLE" --body "$BODY"
+            fi
+            exit 0
+          fi
+          git commit -m "$TITLE"
+          git push --set-upstream origin "$BRANCH"
+          if [ -z "$(gh pr list --repo "$REPO" --base main --head "$BRANCH" --state open --json number --jq '.[0].number')" ]; then
+            gh pr create --repo "$REPO" --base main --head "$BRANCH" --title "$TITLE" --body "$BODY"
+          fi
