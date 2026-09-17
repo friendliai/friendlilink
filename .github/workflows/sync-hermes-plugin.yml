@@ -81,17 +81,16 @@ jobs:
             "AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
           git push origin "$branch"
 
-          pr_number=$(gh pr create \
+          pr_url=$(gh pr create \
             --repo "$TARGET_REPO" \
             --base "$TARGET_BRANCH" \
             --head "$branch" \
             --title "$title" \
-            --body "Auto-synced from friendlilink by `sync-hermes-plugin` (commit $(echo "$GITHUB_SHA" | cut -c1-7))." \
-            --json number --jq '.number')
+            --body "Auto-synced from friendlilink by 'sync-hermes-plugin' (commit $(echo "$GITHUB_SHA" | cut -c1-7)).")
 
-          gh pr comment "$pr_number" \
+          gh pr comment "$(basename "$pr_url")" \
             --repo "$TARGET_REPO" \
             --body "This PR was created by the repo-migrator action.
 
           **Runner Label:** ${RUNNER_LABEL}"
-          echo "Pull request created: $pr_number"
+          echo "Pull request created: $pr_url"
