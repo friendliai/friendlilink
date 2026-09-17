@@ -119,6 +119,10 @@ jobs:
           git config user.email "noreply@friendli.ai"
           printf '%s\n' "$VERSIONS" > scripts/upstream-check/versions.json
           git add scripts/upstream-check/versions.json
+          if git diff --cached --quiet; then
+            echo "versions.json already matches the observed snapshot"
+            exit 0
+          fi
           git commit -m "$TITLE"
           REMOTE_SHA="$(git ls-remote --heads origin "$BRANCH" | cut -f1)"
           if [ -n "$REMOTE_SHA" ]; then
