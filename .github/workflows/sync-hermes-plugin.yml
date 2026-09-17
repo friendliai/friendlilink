@@ -36,14 +36,6 @@ jobs:
           find . -mindepth 1 -maxdepth 1 ! -name '.git' -exec rm -rf {} +
           rsync -a /tmp/plugin/ ./
 
-      # Inline replacement for friendliai/actions/repo-migrator (private).
-      # repo-migrator semantics with preserveFiles=false (default):
-      #   1. Clone target shallow
-      #   2. Delete target files not present in source (except .git)
-      #   3. Copy source files into target
-      #   4. Commit, push branch, open PR
-      #   5. Add runner-label comment to the PR
-      # rsync -a --delete replicates steps 2-3; gh CLI handles 4-5.
       - name: Open sync PR on the mirror
         env:
           GH_TOKEN: ${{ secrets.WEB_GITHUB_TOKEN }}
