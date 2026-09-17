@@ -54,7 +54,7 @@ jobs:
           branch="migrate-$(date -u +%Y%m%d%H%M%S)-$(echo "$GITHUB_SHA" | cut -c1-7)"
 
           git clone --depth=1 \
-            "https://x-access-token:${GH_TOKEN}@github.com/${TARGET_REPO}.git" \
+            "https://github.com/${TARGET_REPO}.git" \
             /tmp/mirror
 
           cd /tmp/mirror
@@ -74,12 +74,11 @@ jobs:
           title="[${RUNNER_LABEL}] Update $(date -u +%Y-%m-%d)"
           git commit -m "$title"
 
-          # Strip token from remote URL before push (avoid token in reflog);
-          # authenticate via the same http.extraHeader mechanism that
-          # repo-migrator's configureGitHubAuth() uses internally.
-          git remote set-url origin "https://github.com/${TARGET_REPO}.git"
+          # Authenticate push via http.extraHeader (same mechanism as
+          # repo-migrator's configureGitHubAuth). Clone used no token
+          # since the target repo is public; only push needs auth.
           git config http.https://github.com/.extraHeader \
-            "AUTHORIZATION: basic $(printf 'x-access-token:%s\n' "$GH_TOKEN" | base64 -w0)"
+            "AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
           git push origin "$branch"
 
           pr_number=$(gh pr create \
