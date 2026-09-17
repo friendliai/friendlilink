@@ -107,11 +107,14 @@ jobs:
       pull-requests: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        # Use the default GITHUB_TOKEN — the job-level permissions grant both
+        # contents:write (branch push) and pull-requests:write (PR create),
+        # so no secret/PAT is needed.
         with:
-          token: ${{ secrets.WEB_GITHUB_TOKEN }}
+          token: ${{ github.token }}
       - name: Commit observed versions and open PR
         env:
-          GH_TOKEN: ${{ secrets.WEB_GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           VERSIONS: ${{ needs.detect.outputs.versions }}
         run: |
