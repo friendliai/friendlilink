@@ -96,7 +96,7 @@ jobs:
             MODE=report node scripts/upstream-check/notify.mjs
 
   snapshot:
-    # Isolated commit job: the only place with contents: write. kept apart
+    # Isolated commit job: the only place with write permissions. kept apart
     # from notify so the read-only default covers every job that runs
     # upstream lifecycle scripts.
     needs: [detect, unit-e2e]
@@ -104,15 +104,28 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      pull-requests: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - name: Commit observed versions
+      - name: Commit observed versions and open PR
         env:
+          GH_TOKEN: ${{ github.token }}
           VERSIONS: ${{ needs.detect.outputs.versions }}
         run: |
+          BRANCH=automation/upstream-compat-watch
+          TITLE="chore(upstream-watch): bump observed versions"
+          BODY="Automated upstream compat watch snapshot update."
           git config user.name "friendliconnect-bot"
           git config user.email "noreply@friendli.ai"
           printf '%s\n' "$VERSIONS" > scripts/upstream-check/versions.json
           git add scripts/upstream-check/versions.json
-          git commit -m "chore(upstream-watch): bump observed versions"
-          git push
+          git commit -m "$TITLE"
+          REMOTE_SHA="$(git ls-remote --heads origin "$BRANCH" | cut -f1)"
+          if [ -n "$REMOTE_SHA" ]; then
+            git push --force-with-lease=refs/heads/$BRANCH:$REMOTE_SHA origin HEAD:refs/heads/$BRANCH
+          else
+            git push origin HEAD:refs/heads/$BRANCH
+          fi
+          if [ -z "$(gh pr list --base main --head "$BRANCH" --state open --json number --jq '.[0].number')" ]; then
+            gh pr create --base main --head "$BRANCH" --title "$TITLE" --body "$BODY"
+          fi
