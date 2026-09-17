@@ -96,7 +96,7 @@ jobs:
             MODE=report node scripts/upstream-check/notify.mjs
 
   snapshot:
-    # Isolated commit job: the only place with write permissions. kept apart
+    # Isolated commit job: the only place with write permissions. Kept apart
     # from notify so the read-only default covers every job that runs
     # upstream lifecycle scripts.
     needs: [detect, unit-e2e]
@@ -118,19 +118,22 @@ jobs:
           BODY="Automated upstream compat watch snapshot update."
           git config user.name "friendliconnect-bot"
           git config user.email "noreply@friendli.ai"
+          if git fetch origin "$BRANCH":"$BRANCH"; then
+            git switch "$BRANCH"
+          else
+            git switch --create "$BRANCH"
+          fi
           printf '%s\n' "$VERSIONS" > scripts/upstream-check/versions.json
           git add scripts/upstream-check/versions.json
           if git diff --cached --quiet; then
             echo "versions.json already matches the observed snapshot"
+            if [ -z "$(gh pr list --repo "$REPO" --base main --head "$BRANCH" --state open --json number --jq '.[0].number')" ]; then
+              gh pr create --repo "$REPO" --base main --head "$BRANCH" --title "$TITLE" --body "$BODY"
+            fi
             exit 0
           fi
           git commit -m "$TITLE"
-          REMOTE_SHA="$(git ls-remote --heads origin "$BRANCH" | cut -f1)"
-          if [ -n "$REMOTE_SHA" ]; then
-            git push --force-with-lease=refs/heads/$BRANCH:$REMOTE_SHA origin HEAD:refs/heads/$BRANCH
-          else
-            git push origin HEAD:refs/heads/$BRANCH
-          fi
+          git push --set-upstream origin "$BRANCH"
           if [ -z "$(gh pr list --repo "$REPO" --base main --head "$BRANCH" --state open --json number --jq '.[0].number')" ]; then
             gh pr create --repo "$REPO" --base main --head "$BRANCH" --title "$TITLE" --body "$BODY"
           fi
