@@ -7,10 +7,6 @@ name: Sync hermes plugin mirror
 # the mirror's history stays append-only, so `hermes plugins update`
 # (git pull --ff-only) keeps working for already-installed users.
 #
-# Inline replacement for friendliai/actions/repo-migrator (private action,
-# unresolvable from a public repo). No untrusted input is interpolated
-# into run: commands below — the only dynamic value used is GITHUB_SHA,
-# a server-generated context value.
 
 on:
   push:
