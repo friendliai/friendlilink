@@ -109,33 +109,50 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           token: ${{ secrets.WEB_GITHUB_TOKEN }}
-      - name: Commit observed versions and open PR
+          fetch-depth: 0
+      - name: Commit observed versions
         env:
-          GH_TOKEN: ${{ secrets.WEB_GITHUB_TOKEN }}
-          REPO: ${{ github.repository }}
           VERSIONS: ${{ needs.detect.outputs.versions }}
         run: |
-          BRANCH=automation/upstream-compat-watch
+          set -euo pipefail
+
           TITLE="chore(upstream-watch): bump observed versions"
-          BODY="Automated upstream compat watch snapshot update."
           git config user.name "friendliconnect-bot"
           git config user.email "noreply@friendli.ai"
-          if git fetch origin "$BRANCH":"$BRANCH"; then
-            git switch "$BRANCH"
-          else
-            git switch --create "$BRANCH"
+
+          git fetch origin main
+          if ! git rebase origin/main; then
+            git rebase --abort || true
+            echo "Failed to rebase snapshot update onto origin/main before commit" >&2
+            exit 1
           fi
+
           printf '%s\n' "$VERSIONS" > scripts/upstream-check/versions.json
           git add scripts/upstream-check/versions.json
           if git diff --cached --quiet; then
             echo "versions.json already matches the observed snapshot"
-            if [ -z "$(gh pr list --repo "$REPO" --base main --head "$BRANCH" --state open --json number --jq '.[0].number')" ]; then
-              gh pr create --repo "$REPO" --base main --head "$BRANCH" --title "$TITLE" --body "$BODY"
-            fi
             exit 0
           fi
+
           git commit -m "$TITLE"
-          git push --set-upstream origin "$BRANCH"
-          if [ -z "$(gh pr list --repo "$REPO" --base main --head "$BRANCH" --state open --json number --jq '.[0].number')" ]; then
-            gh pr create --repo "$REPO" --base main --head "$BRANCH" --title "$TITLE" --body "$BODY"
-          fi
+
+          for attempt in 1 2 3; do
+            if git push origin HEAD:main; then
+              exit 0
+            fi
+
+            if [ "$attempt" -eq 3 ]; then
+              break
+            fi
+
+            echo "Push raced with another update; retrying after rebasing onto origin/main (attempt $((attempt + 1))/3)" >&2
+            git fetch origin main
+            if ! git rebase origin/main; then
+              git rebase --abort || true
+              echo "Failed to rebase snapshot update onto origin/main after push race" >&2
+              exit 1
+            fi
+          done
+
+          echo "Unable to push snapshot update after 3 attempts" >&2
+          exit 1
