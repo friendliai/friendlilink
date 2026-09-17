@@ -110,6 +110,7 @@ jobs:
       - name: Commit observed versions and open PR
         env:
           GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
           VERSIONS: ${{ needs.detect.outputs.versions }}
         run: |
           BRANCH=automation/upstream-compat-watch
@@ -130,6 +131,6 @@ jobs:
           else
             git push origin HEAD:refs/heads/$BRANCH
           fi
-          if [ -z "$(gh pr list --base main --head "$BRANCH" --state open --json number --jq '.[0].number')" ]; then
-            gh pr create --base main --head "$BRANCH" --title "$TITLE" --body "$BODY"
+          if [ -z "$(gh pr list --repo "$REPO" --base main --head "$BRANCH" --state open --json number --jq '.[0].number')" ]; then
+            gh pr create --repo "$REPO" --base main --head "$BRANCH" --title "$TITLE" --body "$BODY"
           fi
