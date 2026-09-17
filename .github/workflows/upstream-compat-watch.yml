@@ -107,9 +107,11 @@ jobs:
       pull-requests: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          token: ${{ secrets.WEB_GITHUB_TOKEN }}
       - name: Commit observed versions and open PR
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.WEB_GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
           VERSIONS: ${{ needs.detect.outputs.versions }}
         run: |
