@@ -1,16 +1,16 @@
 name: Sync hermes plugin mirror
 
 # The hermes plugin's INSTALL CONTRACT is the GitHub repo
-# friendliai/hermes-friendliai-provider (`hermes plugins install
-# friendliai/hermes-friendliai-provider`). Source of truth is this repo's
+# friendliai/hermes-friendliai-provider. Source of truth is this repo's
 # packages/hermes-friendli-provider/; this workflow copies changes to the
-# mirror by opening a PR on it (via friendliai/actions/repo-migrator).
-# Merging that PR publishes the change; the mirror's history stays
-# append-only, so `hermes plugins update` (git pull --ff-only) keeps working
-# for already-installed users.
+# mirror by opening a PR on it. Merging that PR publishes the change;
+# the mirror's history stays append-only, so `hermes plugins update`
+# (git pull --ff-only) keeps working for already-installed users.
 #
-# No untrusted input is interpolated into run: commands below — the only
-# dynamic value used is GITHUB_SHA, a server-generated context value.
+# Inline replacement for friendliai/actions/repo-migrator (private action,
+# unresolvable from a public repo). No untrusted input is interpolated
+# into run: commands below — the only dynamic value used is GITHUB_SHA,
+# a server-generated context value.
 
 on:
   push:
@@ -26,23 +26,73 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       # repo-migrator copies the checkout's relative paths as-is, but the
-      # install contract expects plugin.yaml at the MIRROR REPO ROOT. Isolate
-      # the plugin directory at the workspace root first (rsync --delete
-      # semantics come from repo-migrator's preserveFiles=false default).
+      # install contract expects plugin.yaml at the MIRROR REPO ROOT.
+      # Isolate the plugin directory at the workspace root first
+      # (rsync --delete semantics come from repo-migrator's
+      # preserveFiles=false default).
       - name: Isolate plugin at workspace root
         run: |
           rsync -a packages/hermes-friendli-provider/ /tmp/plugin/
           find . -mindepth 1 -maxdepth 1 ! -name '.git' -exec rm -rf {} +
           rsync -a /tmp/plugin/ ./
 
-      # First-party action pinned to the commit containing the fix for the
-      # empty-excludes file-drop bug (".includes("") === true" filtered all
-      # files). Refresh this SHA when updating to a newer repo-migrator commit.
+      # Inline replacement for friendliai/actions/repo-migrator (private).
+      # repo-migrator semantics with preserveFiles=false (default):
+      #   1. Clone target shallow
+      #   2. Delete target files not present in source (except .git)
+      #   3. Copy source files into target
+      #   4. Commit, push branch, open PR
+      #   5. Add runner-label comment to the PR
+      # rsync -a --delete replicates steps 2-3; gh CLI handles 4-5.
       - name: Open sync PR on the mirror
-        uses: friendliai/actions/repo-migrator@2f6d451548d2cbf58fb04a07a20c0276a27d73ed
         env:
-          GITHUB_TOKEN: ${{ secrets.WEB_GITHUB_TOKEN }}
-        with:
-          target-repo: friendliai/hermes-friendliai-provider
-          target-branch: main
-          runner-label: hermes-plugin-sync
+          GH_TOKEN: ${{ secrets.WEB_GITHUB_TOKEN }}
+          TARGET_REPO: friendliai/hermes-friendliai-provider
+          TARGET_BRANCH: main
+          RUNNER_LABEL: hermes-plugin-sync
+        run: |
+          branch="migrate-$(date -u +%Y%m%d%H%M%S)-$(echo "$GITHUB_SHA" | cut -c1-7)"
+
+          git clone --depth=1 \
+            "https://x-access-token:${GH_TOKEN}@github.com/${TARGET_REPO}.git" \
+            /tmp/mirror
+
+          cd /tmp/mirror
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git checkout -b "$branch"
+
+          # preserveFiles=false: delete target files not in source, then copy
+          rsync -a --delete --exclude='.git' "$GITHUB_WORKSPACE/" ./
+
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes to commit. Skipping PR creation."
+            exit 0
+          fi
+
+          title="[${RUNNER_LABEL}] Update $(date -u +%Y-%m-%d)"
+          git commit -m "$title"
+
+          # Strip token from remote URL before push (avoid token in reflog);
+          # authenticate via the same http.extraHeader mechanism that
+          # repo-migrator's configureGitHubAuth() uses internally.
+          git remote set-url origin "https://github.com/${TARGET_REPO}.git"
+          git config http.https://github.com/.extraHeader \
+            "AUTHORIZATION: basic $(printf 'x-access-token:%s\n' "$GH_TOKEN" | base64 -w0)"
+          git push origin "$branch"
+
+          pr_number=$(gh pr create \
+            --repo "$TARGET_REPO" \
+            --base "$TARGET_BRANCH" \
+            --head "$branch" \
+            --title "$title" \
+            --body "Auto-synced from friendlilink by `sync-hermes-plugin` (commit $(echo "$GITHUB_SHA" | cut -c1-7))." \
+            --json number --jq '.number')
+
+          gh pr comment "$pr_number" \
+            --repo "$TARGET_REPO" \
+            --body "This PR was created by the repo-migrator action.
+
+          **Runner Label:** ${RUNNER_LABEL}"
+          echo "Pull request created: $pr_number"
