@@ -26,10 +26,6 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       # repo-migrator copies the checkout's relative paths as-is, but the
-      # install contract expects plugin.yaml at the MIRROR REPO ROOT.
-      # Isolate the plugin directory at the workspace root first
-      # (rsync --delete semantics come from repo-migrator's
-      # preserveFiles=false default).
       - name: Isolate plugin at workspace root
         run: |
           rsync -a packages/hermes-friendli-provider/ /tmp/plugin/
