@@ -83,24 +83,30 @@ describe("verifyFriendliApiKey", () => {
   it("still rejects on 401 when the catalog probe fails — auth is read before the body", async () => {
     routeResponses({ models: 500, chat: 401 });
 
-    await expect(verifyFriendliApiKey("bogus-key-12345")).resolves.toMatchObject(
-      { ok: false },
-    );
+    await expect(
+      verifyFriendliApiKey("bogus-key-12345"),
+    ).resolves.toMatchObject({ ok: false });
   });
 
   it("passes a key it cannot disprove, with the uncertainty as a message", async () => {
     routeResponses({ models: 200, chat: new Error("network down") });
 
-    await expect(verifyFriendliApiKey("real-key-123456")).resolves.toMatchObject(
-      { ok: true, message: expect.stringContaining("Could not reach") },
-    );
+    await expect(
+      verifyFriendliApiKey("real-key-123456"),
+    ).resolves.toMatchObject({
+      ok: true,
+      message: expect.stringContaining("Could not reach"),
+    });
   });
 
   it("passes with a warning when the gateway answers something unpredicted", async () => {
     routeResponses({ models: 200, chat: 503, modelId: "zai-org/GLM-5.3" });
 
-    await expect(verifyFriendliApiKey("real-key-123456")).resolves.toMatchObject(
-      { ok: true, message: expect.stringContaining("HTTP 503") },
-    );
+    await expect(
+      verifyFriendliApiKey("real-key-123456"),
+    ).resolves.toMatchObject({
+      ok: true,
+      message: expect.stringContaining("HTTP 503"),
+    });
   });
 });

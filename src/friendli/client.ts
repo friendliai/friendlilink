@@ -38,7 +38,9 @@ export async function verifyFriendliApiKey(
     baseUrl,
   );
   if (!check.accepted) {
-    return check.message ? { ok: false, message: check.message } : { ok: false };
+    return check.message
+      ? { ok: false, message: check.message }
+      : { ok: false };
   }
   if (check.conclusive) {
     return { ok: true };
