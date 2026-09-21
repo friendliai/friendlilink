@@ -4,5 +4,5 @@
   "@deepseek-ai/dsh-llm": "0.0.1-rc.1",
   "hermes-agent": "0.21.3",
   "opencode-ai": "1.18.31",
-  "@earendil-works/pi-coding-agent": "0.86.0"
+  "@earendil-works/pi-coding-agent": "0.86.1"
 }
