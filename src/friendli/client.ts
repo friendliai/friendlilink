@@ -1,7 +1,10 @@
 import { FRIENDLI_BASE_URL, friendliApiUrl } from "./base-url.js";
+import { fetchFriendliModelCatalog } from "./model-catalog.js";
 
 export interface VerifyKeyResult {
   ok: boolean;
+  /** Set when ok is true but the check could not rule the key out — callers
+   * warn rather than fail. Set when ok is false with the rejection reason. */
   message?: string;
 }
 
@@ -23,48 +26,26 @@ export async function verifyFriendliApiKey(
   apiKey: string,
   baseUrl: string = FRIENDLI_BASE_URL,
 ): Promise<VerifyKeyResult> {
+  let probeModel: string | undefined;
   try {
-    const response = await fetch(friendliApiUrl("models", baseUrl), {
-      headers: authHeaders(apiKey),
-    });
-    if (response.ok) {
-      return { ok: true };
-    }
-    if (response.status === 401 || response.status === 403) {
-      return {
-        ok: false,
-        message: "FriendliAI rejected this API key (unauthorized).",
-      };
-    }
-    return {
-      ok: false,
-      message: `FriendliAI returned HTTP ${response.status} while verifying the key.`,
-    };
-  } catch (error) {
-    return {
-      ok: false,
-      message: `Could not reach FriendliAI: ${(error as Error).message}`,
-    };
+    probeModel = (await fetchFriendliModelCatalog(apiKey, baseUrl))[0]?.id;
+  } catch {
+    // The public catalog is best-effort — see the doc comment above.
   }
+  const check = await checkFriendliCredential(
+    apiKey,
+    probeModel ?? "",
+    baseUrl,
+  );
+  if (!check.accepted) {
+    return check.message ? { ok: false, message: check.message } : { ok: false };
+  }
+  if (check.conclusive) {
+    return { ok: true };
+  }
+  return check.message ? { ok: true, message: check.message } : { ok: true };
 }
 
-/**
- * Does Friendli actually accept this key?
- *
- * `verifyFriendliApiKey` above cannot answer that. It probes `GET /v1/models`,
- * which Friendli serves to everyone — it returns 200 with no Authorization
- * header at all — so a 200 proves the gateway is reachable and nothing about
- * the credential. This sends an authenticated request instead: a
- * `chat/completions` call carrying no messages. Auth is checked first, so a
- * valid key gets past it and is refused on the body (422) while an invalid one
- * is refused at the door (401). Inference is never reached and no tokens are
- * spent.
- *
- * Only an explicit 401 is treated as rejection. A 403, a 5xx, a DNS failure —
- * none of those prove the key is bad, and a guard that blocks a working setup
- * on a transient error is worse than the hole it closes. So the bias is
- * deliberate: this can pass a bad key through, but it will not stop a good one.
- */
 export async function checkFriendliCredential(
   apiKey: string,
   modelId: string,
