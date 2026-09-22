@@ -1,9 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-// verifyFriendliApiKey now sends an authenticated chat/completions probe —
-// GET /v1/models answers 200 to any Bearer, so it can no longer fake a
-// verification. Mock global fetch so these tests pin the wire contract:
-// 401 = rejected, 422 = auth cleared, anything else = inconclusive pass.
+// verifyFriendliApiKey uses an authenticated chat probe.
+// 401 and 403 reject. 422 accepts. Other responses fail verification.
 const fetchMock = vi.fn();
 
 vi.stubGlobal("fetch", (...args: unknown[]) => fetchMock(...args));
@@ -46,16 +44,15 @@ describe("verifyFriendliApiKey", () => {
     fetchMock.mockReset();
   });
 
-  it("rejects a key Friendli answers 401 to, naming the probe model", async () => {
+  it("rejects a key Friendli answers 401 to", async () => {
     routeResponses({ models: 200, chat: 401, modelId: "zai-org/GLM-5.3" });
 
     const result = await verifyFriendliApiKey("bogus-key-12345");
 
     expect(result).toEqual({
       ok: false,
-      message: "FriendliAI rejected this API key (unauthorized).",
+      message: "FriendliAI rejected the API key.",
     });
-    // The credential probe carries the Bearer and the catalog's first model.
     const chatCall = fetchMock.mock.calls.find(([url]) =>
       String(url).endsWith("/chat/completions"),
     );
@@ -72,6 +69,14 @@ describe("verifyFriendliApiKey", () => {
     });
   });
 
+  it("rejects a key Friendli answers 403 to", async () => {
+    routeResponses({ models: 200, chat: 403 });
+
+    await expect(
+      verifyFriendliApiKey("bogus-key-12345"),
+    ).resolves.toMatchObject({ ok: false });
+  });
+
   it("accepts a key that clears auth (422 on the empty-messages body)", async () => {
     routeResponses({ models: 200, chat: 422, modelId: "zai-org/GLM-5.3" });
 
@@ -80,7 +85,7 @@ describe("verifyFriendliApiKey", () => {
     });
   });
 
-  it("still rejects on 401 when the catalog probe fails — auth is read before the body", async () => {
+  it("still rejects on 401 when the catalog probe fails", async () => {
     routeResponses({ models: 500, chat: 401 });
 
     await expect(
@@ -88,25 +93,25 @@ describe("verifyFriendliApiKey", () => {
     ).resolves.toMatchObject({ ok: false });
   });
 
-  it("passes a key it cannot disprove, with the uncertainty as a message", async () => {
+  it("rejects when the credential probe cannot reach Friendli", async () => {
     routeResponses({ models: 200, chat: new Error("network down") });
 
     await expect(
       verifyFriendliApiKey("real-key-123456"),
     ).resolves.toMatchObject({
-      ok: true,
-      message: expect.stringContaining("Could not reach"),
+      ok: false,
+      message: "Could not verify the FriendliAI API key.",
     });
   });
 
-  it("passes with a warning when the gateway answers something unpredicted", async () => {
+  it("rejects when Friendli returns an unexpected status", async () => {
     routeResponses({ models: 200, chat: 503, modelId: "zai-org/GLM-5.3" });
 
     await expect(
       verifyFriendliApiKey("real-key-123456"),
     ).resolves.toMatchObject({
-      ok: true,
-      message: expect.stringContaining("HTTP 503"),
+      ok: false,
+      message: "Could not verify the FriendliAI API key.",
     });
   });
 });
