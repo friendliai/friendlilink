@@ -33,7 +33,7 @@ notify
 
 - `check.mjs` — npm lookup + diff. Snapshot keys are the real npm package names; the harness alias lives in check.mjs's WATCH list. Records latest locally; commit is the workflow's job. Registry failure = `::warning::` only.
 - `versions.json` — last passing snapshot, keyed by npm package name. Source of truth for the diff.
-- `install-and-test.sh` — `npm install -g <pkg>@<to>` then `pnpm test -- test/harnesses/<name>` with HOME/XDG/DSH_HOME/HERMES_HOME/PI_CODING_AGENT_DIR pointed at a throwaway sandbox (shell twin of `createSandboxHome()` in test/helpers.ts). Skipped tests are treated as failure: with the real CLI installed, `describe.skipIf(binary)` must not skip.
+- `install-and-test.sh` — `npm install -g <pkg>@<to>` then `pnpm test -- test/harnesses/<name>` with HOME/XDG/DSH_HOME/PI_CODING_AGENT_DIR pointed at a throwaway sandbox (Hermes resolves its per-test home from the test context). Skipped tests are treated as failure: with the real CLI installed, `describe.skipIf(binary)` must not skip.
 - `e2e.mjs` — stub. Every harness returns `{"e2e":"not implemented"}`, exit 0. Single extension point for future real e2e.
 - `notify.mjs` — builds the Slack message from the changed matrix + aggregate unit result (or `RESULTS`/`MODE` env for local runs). No `SLACK_WEBHOOK_URL` → `::warning::`, exit 0.
 
