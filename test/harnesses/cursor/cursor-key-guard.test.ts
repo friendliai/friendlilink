@@ -146,12 +146,11 @@ describe("cursor on — API key guard", () => {
   });
 
   it("does not bank a --api-key key that Friendli then rejects", async () => {
-    // The preamble's own check probes the unauthenticated /models endpoint,
-    // so without deferral it would save a revoked key before we ask Friendli.
+    // The key check runs before Cursor writes the key.
     globalThis.fetch = gateway([GOOD]) as unknown as typeof fetch;
     await expect(
       cursorAdapter.on(ctx({ apiKeyPreverified: false })),
-    ).rejects.toThrow(/rejected this API key/);
+    ).rejects.toThrow(/rejected the API key/);
     expect(persistApiKeyMock).not.toHaveBeenCalled();
   });
 
