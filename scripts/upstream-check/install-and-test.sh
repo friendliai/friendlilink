@@ -6,7 +6,9 @@
 # Installs the NEW upstream version of one harness CLI, then runs that
 # harness's vitest suite with HOME and harness homes redirected into a
 # throwaway sandbox (the shell-script twin of test/helpers.ts
-# createSandboxHome()). Reports skipped tests as failure: with the real CLI
+# createSandboxHome()). Hermes is intentionally omitted from the env override:
+# its tests create their own per-test homes, and hermesHome() must resolve
+# those paths from the test context. Reports skipped tests as failure: with the real CLI
 # installed, describe.skipIf(binary) must not skip — a skip here means the new
 # version broke the probe or the install, and a "pass" would be misleading.
 #
@@ -61,7 +63,7 @@ run_unit() {
   export XDG_CONFIG_HOME="$sandbox/home/.config"
   export APPDATA="$sandbox/home/AppData/Roaming"
   export DSH_HOME="$sandbox/home/.dsh"
-  export HERMES_HOME="$sandbox/home/.hermes"
+
   export PI_CODING_AGENT_DIR="$sandbox/home/.pi/agent"
 
   set +e
