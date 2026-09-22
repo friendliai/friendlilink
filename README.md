@@ -51,8 +51,6 @@ Grab your API key at [Friendli Suite](https://friendli.ai/suite), then:
 frlink login
 ```
 
-`frlink login` checks the key with Friendli before saving it. It saves the key only after Friendli accepts it. If the check fails or the gateway is unavailable, no key is saved.
-
 This saves the key to the OS keychain. If the keychain is unavailable or the write cannot be verified, `frlink` warns and falls back to `~/.frlink/.api-key` with owner-only permissions.
 
 `logout` removes the key saved by `frlink`, including the fallback file. It does not disable agents or remove keys already written to their configurations. To disconnect everything, run:
