@@ -27,9 +27,7 @@ export async function resolveVerifiedKey(
   baseUrl: string,
   options: {
     /** Save a `--api-key` key once it passes. Pass false when the caller runs
-     * a stronger check of its own and will persist the survivor itself — the
-     * verification here only proves Friendli is reachable, because it probes
-     * `GET /v1/models`, which Friendli serves without a credential. */
+     * a stronger check of its own and will persist the survivor itself. */
     persistFlagKey?: boolean;
   } = {},
 ): Promise<VerifiedKey> {

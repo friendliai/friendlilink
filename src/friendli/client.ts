@@ -1,15 +1,17 @@
 import { FRIENDLI_BASE_URL, friendliApiUrl } from "./base-url.js";
+import { fetchFriendliModelCatalog } from "./model-catalog.js";
 
 export interface VerifyKeyResult {
   ok: boolean;
+  /** Message for a rejected or inconclusive check. */
   message?: string;
 }
 
-/** Whether Friendli accepted a credential, and whether we can be sure. */
+/** Result of one authenticated credential probe. */
 export interface CredentialCheck {
-  /** False only on an explicit rejection. */
+  /** True when the response did not reject the key. */
   accepted: boolean;
-  /** False when the gateway never gave a verdict (offline, 5xx, ...). */
+  /** True when the response gives a definite auth result. */
   conclusive: boolean;
   message?: string;
 }
@@ -19,52 +21,40 @@ function authHeaders(apiKey: string): Record<string, string> {
   return { Authorization: `Bearer ${apiKey}` };
 }
 
+/**
+ * Check a key before saving it.
+ *
+ * The model catalog provides a probe model. The empty chat request checks auth
+ * before request validation and does not generate tokens.
+ */
+
 export async function verifyFriendliApiKey(
   apiKey: string,
   baseUrl: string = FRIENDLI_BASE_URL,
 ): Promise<VerifyKeyResult> {
+  let probeModel: string | undefined;
   try {
-    const response = await fetch(friendliApiUrl("models", baseUrl), {
-      headers: authHeaders(apiKey),
-    });
-    if (response.ok) {
-      return { ok: true };
-    }
-    if (response.status === 401 || response.status === 403) {
-      return {
-        ok: false,
-        message: "FriendliAI rejected this API key (unauthorized).",
-      };
-    }
+    probeModel = (await fetchFriendliModelCatalog(apiKey, baseUrl))[0]?.id;
+  } catch {
+    // The catalog is optional. The authenticated probe still decides.
+  }
+  const check = await checkFriendliCredential(
+    apiKey,
+    probeModel ?? "",
+    baseUrl,
+  );
+  if (!check.accepted || !check.conclusive) {
     return {
       ok: false,
-      message: `FriendliAI returned HTTP ${response.status} while verifying the key.`,
-    };
-  } catch (error) {
-    return {
-      ok: false,
-      message: `Could not reach FriendliAI: ${(error as Error).message}`,
+      message: check.accepted
+        ? "Could not verify the FriendliAI API key."
+        : "FriendliAI rejected the API key.",
     };
   }
+  return { ok: true };
 }
 
-/**
- * Does Friendli actually accept this key?
- *
- * `verifyFriendliApiKey` above cannot answer that. It probes `GET /v1/models`,
- * which Friendli serves to everyone — it returns 200 with no Authorization
- * header at all — so a 200 proves the gateway is reachable and nothing about
- * the credential. This sends an authenticated request instead: a
- * `chat/completions` call carrying no messages. Auth is checked first, so a
- * valid key gets past it and is refused on the body (422) while an invalid one
- * is refused at the door (401). Inference is never reached and no tokens are
- * spent.
- *
- * Only an explicit 401 is treated as rejection. A 403, a 5xx, a DNS failure —
- * none of those prove the key is bad, and a guard that blocks a working setup
- * on a transient error is worse than the hole it closes. So the bias is
- * deliberate: this can pass a bad key through, but it will not stop a good one.
- */
+/** Probe a key without generating a completion. */
 export async function checkFriendliCredential(
   apiKey: string,
   modelId: string,
@@ -76,30 +66,29 @@ export async function checkFriendliCredential(
       headers: { ...authHeaders(apiKey), "content-type": "application/json" },
       body: JSON.stringify({ model: modelId, messages: [] }),
     });
-    if (response.status === 401) {
+    if (response.status === 401 || response.status === 403) {
       return {
         accepted: false,
         conclusive: true,
         message: "FriendliAI rejected this API key (unauthorized).",
       };
     }
-    // 422 is the expected pass: auth cleared, the empty `messages` refused.
-    // Anything else got past auth too, but for a reason we did not predict —
-    // a 403, a 5xx, a gateway in front of Friendli — so the key is let
-    // through and the uncertainty is reported rather than swallowed.
+    // 422 means auth passed and empty messages were rejected.
     if (response.status === 422) {
       return { accepted: true, conclusive: true };
     }
+    // Other responses do not prove that the key works.
     return {
       accepted: true,
       conclusive: false,
-      message: `Could not confirm the API key — FriendliAI answered HTTP ${response.status} to the credential check.`,
+      message: `Could not confirm the API key. FriendliAI answered HTTP ${response.status} to the credential check.`,
     };
   } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
     return {
       accepted: true,
       conclusive: false,
-      message: `Could not reach FriendliAI to check the key: ${(error as Error).message}`,
+      message: `Could not reach FriendliAI to check the key: ${message}`,
     };
   }
 }
