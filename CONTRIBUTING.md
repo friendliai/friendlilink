@@ -1,5 +1,20 @@
 # Contributing
 
+## Internal → public dispatch
+
+Run the manual `Dispatch internal to public` workflow to publish an internal
+ref. It applies only changes since the internal commit recorded by the most
+recent public dispatch commit (`Synced from friendliai/friendlilink-internal @
+<SHA>`). Public-only edits are retained; `.github/**` stays repo-specific.
+The public clone must include its full history, and the recorded commit must
+be an ancestor of the selected internal ref. Missing provenance is an error.
+If edits overlap, dispatch emits a warning, skips PR creation, and completes
+successfully without publishing anything. Reconcile the conflict separately
+before a future dispatch; do not force a whole-tree sync.
+
+Run `bash .github/scripts/dispatch/apply.test.sh` to check preservation,
+no-op, conflict-skip, and missing-provenance behavior locally.
+
 ## Versioning & releases
 
 The repo ships three independently versioned artifacts. Each has its own
@@ -38,3 +53,16 @@ cd packages/dsh-llm-friendli && pnpm publish
 For `hermes-friendli-provider`, no manual publish — the same push that changed
 `plugin.yaml` triggers `.github/workflows/sync-hermes-plugin.yml` (on merge to
 `main`), which opens a PR on the mirror repo; merging that PR publishes.
+
+## Public-to-internal sync
+
+The internal repository is the development source of truth. Public releases
+are dispatched from internal manually. The daily follower workflow imports
+public changes after the latest dispatch (or the last reviewed import) with a
+three-way merge onto internal `main`, excluding `.github/`. It records the
+imported public commit in `.github/follower-public-base.sha` in the same PR as
+the content. If both sides changed the same content, the workflow fails and
+closes stale follower PRs instead of reverting internal work. Resolve the
+conflict manually, keeping internal changes where appropriate, and update the
+cursor to the reviewed public commit before retrying. A later dispatch
+supersedes an older cursor.

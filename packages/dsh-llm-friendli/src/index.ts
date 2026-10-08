@@ -15,7 +15,10 @@ import type { Context } from "@deepseek-ai/cordis";
 import Schema from "@deepseek-ai/schemastery";
 import { LlmError } from "@deepseek-ai/dsh-llm";
 import { FriendliAdapter, PUBLIC_BASE_URL } from "./adapter.ts";
-import type { FriendliConnectionOptions } from "./adapter.ts";
+import type {
+  FriendliConnectionOptions,
+  FriendliImageReader,
+} from "./adapter.ts";
 
 export { FriendliAdapter, PUBLIC_BASE_URL, httpErrorCode } from "./adapter.ts";
 export type {
@@ -28,7 +31,7 @@ export type { RequestDefaults } from "./serialize.ts";
 
 /** The plugin name and the LLM service it injects. */
 export const name = "@friendliai/dsh-llm-friendli";
-export const inject = ["llm"];
+export const inject = ["llm", "attachments"];
 
 const DEFAULT_API_KEY_ENV = "FRIENDLIAI_API_KEY";
 const DEFAULT_MODEL_CACHE_TTL_MS = 60_000;
@@ -114,6 +117,8 @@ export function apply(ctx: Context, config: Config): void {
   const adapter = new FriendliAdapter({
     options,
     resolveApiKey,
+    attachments: (ctx as Context & { attachments: FriendliImageReader })
+      .attachments,
     resolveDiscoveryKey,
   });
   ctx.llm.registerAdapter(providers, adapter);

@@ -1,12 +1,10 @@
 import { describe, expect, it } from "vitest";
-import {
-  createAssistantMessage,
-  createMessage,
-  createToolResultMessage,
-  ReasoningEffortId,
-  ToolCallId,
+import { MessageId, ReasoningEffortId, ToolCallId } from "@deepseek-ai/dsh-llm";
+import type {
+  GenerateOptions,
+  ImageBlock,
+  ToolSchema,
 } from "@deepseek-ai/dsh-llm";
-import type { GenerateOptions, ToolSchema } from "@deepseek-ai/dsh-llm";
 import { serializeRequest } from "../src/serialize.ts";
 
 /** Minimal one-user-turn request; per-test overrides merge on top. */
@@ -14,63 +12,142 @@ function req(overrides: Partial<GenerateOptions> = {}): GenerateOptions {
   return {
     provider: "friendli",
     model: "zai-org/GLM-5.2",
-    messages: [
-      { role: "user", content: [{ type: "text", text: "hi" }] },
-    ] as GenerateOptions["messages"],
+    messages: [{ role: "user", content: [{ type: "text", text: "hi" }] }],
     ...overrides,
   };
 }
 
 describe("serializeRequest history", () => {
-  it("preserves request-only input, developer instructions, assistant calls and tool-role results in order", () => {
-    const callId = ToolCallId("call-1");
-    const body = serializeRequest(
-      req({
-        messages: [
-          { role: "user", content: [{ type: "text", text: "hi" }] },
-          createMessage({
-            role: "developer",
-            source: { kind: "user" },
-            content: [
-              { type: "tool-addition", toolName: "search" },
-              { type: "text", text: "Use search" },
-            ],
-          }),
-          createAssistantMessage({
-            source: { provider: "friendli", model: "test" },
-            content: [
-              {
-                type: "tool-call",
-                id: callId,
-                name: "search",
-                arguments: "{}",
-              },
-            ],
-          }),
-          createToolResultMessage({
-            callId,
-            content: [{ type: "text", text: "found" }],
-            isError: false,
-          }),
-        ],
-      }),
-    );
-    expect(body.messages).toEqual([
+  it("preserves a one-shot identity-free user request", () => {
+    expect(serializeRequest(req({ system: "Be concise." })).messages).toEqual([
+      { role: "system", content: "Be concise." },
       { role: "user", content: "hi" },
-      { role: "system", content: "Use search" },
+    ]);
+  });
+
+  it("replays durable user, assistant tool call, and first-class tool result in order", () => {
+    const callId = ToolCallId("call_weather_1");
+    const messages: GenerateOptions["messages"] = [
+      {
+        role: "system",
+        id: MessageId("system-1"),
+        source: { kind: "system-prompt" },
+        content: [{ type: "text", text: "Use tools." }],
+      },
+      {
+        role: "user",
+        id: MessageId("user-1"),
+        source: { kind: "user" },
+        content: [{ type: "text", text: "Weather in Seoul?" }],
+      },
       {
         role: "assistant",
-        content: "",
-        tool_calls: [
+        id: MessageId("assistant-1"),
+        source: {
+          kind: "model",
+          provider: "friendli",
+          model: "zai-org/GLM-5.2",
+        },
+        content: [
+          { type: "reasoning", text: "Look up current conditions." },
           {
-            id: "call-1",
-            type: "function",
-            function: { name: "search", arguments: "{}" },
+            type: "tool-call",
+            id: callId,
+            name: "weather",
+            arguments: '{"city":"Seoul"}',
           },
         ],
       },
-      { role: "tool", tool_call_id: "call-1", content: "found" },
+      {
+        role: "tool",
+        id: MessageId("tool-1"),
+        source: { kind: "tool", callId },
+        toolCallId: callId,
+        content: [{ type: "text", text: "18 C, sunny" }],
+      },
+      {
+        role: "assistant",
+        id: MessageId("assistant-2"),
+        source: {
+          kind: "model",
+          provider: "friendli",
+          model: "zai-org/GLM-5.2",
+        },
+        content: [{ type: "text", text: "It is 18 C and sunny." }],
+      },
+    ];
+
+    expect(serializeRequest(req({ messages })).messages).toEqual([
+      { role: "system", content: "Use tools." },
+      { role: "user", content: "Weather in Seoul?" },
+      {
+        role: "assistant",
+        content: "",
+        reasoning_content: "Look up current conditions.",
+        tool_calls: [
+          {
+            id: "call_weather_1",
+            type: "function",
+            function: { name: "weather", arguments: '{"city":"Seoul"}' },
+          },
+        ],
+      },
+      { role: "tool", tool_call_id: "call_weather_1", content: "18 C, sunny" },
+      { role: "assistant", content: "It is 18 C and sunny." },
     ]);
+  });
+
+  it("rejects in-history developer tool changes instead of sending them as user text", () => {
+    for (const type of ["tool-addition", "tool-removal"] as const) {
+      const messages: GenerateOptions["messages"] = [
+        { role: "user", content: [{ type: "text", text: "Use a tool" }] },
+        {
+          role: "developer",
+          id: MessageId(`update-${type}`),
+          source: { kind: "user" },
+          content: [{ type, toolName: "weather" }],
+        },
+      ];
+      expect(() => serializeRequest(req({ messages }))).toThrowError(
+        expect.objectContaining({ code: "UNSUPPORTED_TOOL_UPDATE" }),
+      );
+    }
+  });
+});
+
+describe("serializeRequest images", () => {
+  it("preserves interleaved text and verified image data URLs", () => {
+    const image = {
+      type: "image",
+      attachment: { attachmentId: "image-1", mediaType: "image/png" },
+    } as ImageBlock;
+    const messages = [
+      {
+        role: "user" as const,
+        content: [
+          { type: "text" as const, text: "first" },
+          image,
+          { type: "text" as const, text: "last" },
+        ],
+      },
+    ] as GenerateOptions["messages"];
+    const urls = new Map([[image, "data:image/png;base64,aGVsbG8="]]);
+    expect(serializeRequest(req({ messages }), {}, urls).messages).toEqual([
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "first" },
+          {
+            type: "image_url",
+            image_url: { url: "data:image/png;base64,aGVsbG8=" },
+          },
+          { type: "text", text: "last" },
+        ],
+      },
+    ]);
+    expect(() => serializeRequest(req({ messages }))).toThrowError(
+      expect.objectContaining({ code: "UNSUPPORTED_CONTENT" }),
+    );
   });
 });
 
@@ -171,7 +248,7 @@ describe("serializeRequest tool schema normalization", () => {
       model: "zai-org/GLM-5.2",
       messages: [
         { role: "user", content: [{ type: "text", text: "call it" }] },
-      ] as GenerateOptions["messages"],
+      ],
       tools: [tool],
     };
   }
