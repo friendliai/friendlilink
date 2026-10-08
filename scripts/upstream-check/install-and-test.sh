@@ -51,8 +51,8 @@ install_hermes()   {
 # Install only the root app for non-dsh legs. A workspace-wide install also
 # runs the dsh adapter's prepare script, which must not make an unrelated
 # harness's result fail. Keep the normal HOME for pnpm's cache; only the
-# test process below uses the sandbox. Lockfiles are intentionally not
-# committed here (see .github/workflows/ci.yml).
+# test process below uses the sandbox. The dsh leg deliberately updates its
+# dependency in this disposable checkout rather than freezing the lockfile.
 pnpm --filter frlink install
 
 if [[ "$name" == dsh ]]; then

@@ -40,17 +40,21 @@ export interface WireRequest {
   reasoning_budget?: number;
 }
 
-/** System/user/tool message: a single content string. */
+export type WireContentPart =
+  | { type: "text"; text: string }
+  | { type: "image_url"; image_url: { url: string } };
+
+/** System/user message: text or ordered text/image content parts. */
 export interface WireTextMessage {
   role: "system" | "user";
-  content: string;
+  content: string | WireContentPart[];
 }
 
 /** Tool-result message, keyed by the originating call id. */
 export interface WireToolMessage {
   role: "tool";
   tool_call_id: string;
-  content: string;
+  content: string | WireContentPart[];
 }
 
 /** Assistant history message; `content` is `""` (never null) on tool-only turns. */
@@ -133,6 +137,7 @@ export interface WireModelEntry {
   id?: unknown;
   name?: unknown;
   context_length?: unknown;
+  input_modalities?: unknown;
   max_completion_tokens?: unknown;
   /** Present only on models no longer active; such entries are dropped from the catalog. */
   deprecation_date?: unknown;
