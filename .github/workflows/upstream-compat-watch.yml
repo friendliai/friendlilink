@@ -59,6 +59,10 @@ jobs:
         with:
           node-version: 22
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+        if: matrix.name == 'hermes'
+        with:
+          version: "0.12.13"
       - name: Install ${{ matrix.name }} ${{ matrix.to }} and run unit tests
         id: unit
         run: bash scripts/upstream-check/install-and-test.sh ${{ matrix.name }} ${{ matrix.to }}

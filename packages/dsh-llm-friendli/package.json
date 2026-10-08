@@ -1,6 +1,6 @@
 {
   "name": "@friendliai/dsh-llm-friendli",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "FriendliAI serverless LLM adapter for DeepSeek Harness \u2014 OpenAI-compatible chat completions with dynamic model discovery and reasoning support",
   "keywords": [
     "deepseek-harness",
@@ -51,13 +51,13 @@
     "eventsource-parser": "^4.1.0"
   },
   "peerDependencies": {
-    "@deepseek-ai/cordis": "^4.0.2",
-    "@deepseek-ai/dsh-llm": "^0.1.2-rc.1",
+    "@deepseek-ai/cordis": "~4.0.4",
+    "@deepseek-ai/dsh-llm": "^0.2.0-rc.2",
     "@deepseek-ai/schemastery": "^3.18.0"
   },
   "devDependencies": {
-    "@deepseek-ai/cordis": "^4.0.2",
-    "@deepseek-ai/dsh-llm": "^0.1.2-rc.1",
+    "@deepseek-ai/cordis": "~4.0.4",
+    "@deepseek-ai/dsh-llm": "^0.2.0-rc.2",
     "@deepseek-ai/schemastery": "^3.18.0",
     "@types/node": "^26.2.0",
     "typescript": "^7.0.2",

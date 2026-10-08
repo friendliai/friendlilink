@@ -48,12 +48,37 @@ install_hermes()   {
   fi
 }
 
-# Dependency install first, with the normal HOME — the sandbox redirection
-# below is for the test process, not the package manager (a redirected HOME
-# gives pnpm an empty cache and costs minutes on CI for nothing). No
-# --frozen-lockfile: lockfiles are intentionally not committed to this repo
-# (see .github/workflows/ci.yml).
-pnpm install
+# Install only the root app for non-dsh legs. A workspace-wide install also
+# runs the dsh adapter's prepare script, which must not make an unrelated
+# harness's result fail. Keep the normal HOME for pnpm's cache; only the
+# test process below uses the sandbox. The dsh leg deliberately updates its
+# dependency in this disposable checkout rather than freezing the lockfile.
+pnpm --filter frlink install
+
+if [[ "$name" == dsh ]]; then
+  # Compile the local adapter against the version under test, not whichever
+  # dsh-llm version happens to be declared in this checkout. This leg alone
+  # installs the workspace plugin and must fail on adapter incompatibility.
+  pnpm --filter @friendliai/dsh-llm-friendli add --save-dev --save-exact "@deepseek-ai/dsh-llm@$to"
+  pnpm --filter @friendliai/dsh-llm-friendli run typecheck
+fi
+
+# Hermes' Python provider is not a pnpm workspace package. Exercise it only
+# on the Hermes leg, against the exact runtime installed above, so a provider
+# failure cannot mark another harness's update as incompatible.
+run_hermes_plugin() {
+  local sandbox runtime status=0
+  sandbox="$(mktemp -d)"
+  runtime="$HOME/.hermes/hermes-agent"
+  mkdir -p "$sandbox/plugins/model-providers"
+  ln -s "$PWD/packages/hermes-friendli-provider" "$sandbox/plugins/model-providers/friendli"
+  HERMES_HOME="$sandbox" PYTHONPATH="$runtime${PYTHONPATH:+:$PYTHONPATH}" \
+    uv run --no-project --python "$runtime/venv/bin/python" --with pytest \
+      python -m pytest packages/hermes-friendli-provider/test_friendli_profile.py \
+      packages/hermes-friendli-provider/test_transport_kwargs.py -q || status=$?
+  rm -rf "$sandbox"
+  return "$status"
+}
 
 # --- unit ------------------------------------------------------------------
 run_unit() {
@@ -86,4 +111,7 @@ esac
 
 cd "$(dirname "$0")/../.."
 "install_$name"
+if [[ "$name" == hermes ]]; then
+  run_hermes_plugin
+fi
 run_unit
