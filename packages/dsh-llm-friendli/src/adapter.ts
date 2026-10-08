@@ -16,6 +16,8 @@ import {
 } from "@deepseek-ai/dsh-llm";
 import type {
   GenerateOptions,
+  ContentBlock,
+  ImageBlock,
   LlmModelInfo,
   LlmModelReasoningInfo,
   LlmProviderInfo,
@@ -46,6 +48,14 @@ export interface FriendliConnectionOptions {
   extraHeaders: Readonly<Record<string, string>>;
 }
 
+/** DSH attachment capability used to read and verify durable image references. */
+export interface FriendliImageReader {
+  readImage(
+    ref: ImageBlock["attachment"],
+    signal?: AbortSignal,
+  ): Promise<{ ref: ImageBlock["attachment"]; data: Uint8Array }>;
+}
+
 /** Operation-local resolution hooks the plugin owns. */
 export interface FriendliAdapterOptions {
   /** Current validated connection facts; called once per operation. */
@@ -61,6 +71,8 @@ export interface FriendliAdapterOptions {
    * failing when no key is configured.
    */
   resolveDiscoveryKey?: () => Promise<string | undefined>;
+  /** DSH's verified attachment service, needed only for image requests. */
+  attachments?: FriendliImageReader;
 }
 
 const OFF = ReasoningEffortId("off");
@@ -116,7 +128,7 @@ function modelInfo(provider: string, model: FriendliModel): LlmModelInfo {
     provider,
     id: model.id,
     name: model.name,
-    inputModalities: ["text"],
+    inputModalities: model.inputModalities,
   };
 }
 
@@ -208,7 +220,33 @@ export class FriendliAdapter extends LlmAdapter {
         ? consumer.signal
         : AbortSignal.any([options.signal, consumer.signal]);
 
-    const body = serializeRequest(options, connection.defaults);
+    let imageUrls: Map<ContentBlock, string> | undefined;
+    for (const message of options.messages) {
+      if (message.role !== "user" && message.role !== "tool") continue;
+      for (const block of message.content) {
+        if (block.type !== "image") continue;
+        if (this.config.attachments === undefined)
+          throw new LlmError(
+            "Friendli image input requires the DSH attachment service.",
+            "UNSUPPORTED_CONTENT",
+          );
+        const { ref, data } = await this.config.attachments.readImage(
+          block.attachment,
+          upstream,
+        );
+        const encoded = Buffer.from(
+          data.buffer,
+          data.byteOffset,
+          data.byteLength,
+        ).toString("base64");
+        (imageUrls ??= new Map()).set(
+          block,
+          `data:${ref.mediaType};base64,${encoded}`,
+        );
+      }
+    }
+
+    const body = serializeRequest(options, connection.defaults, imageUrls);
     const payload = JSON.stringify(body);
     const headers = {
       authorization: `Bearer ${apiKey}`,
