@@ -1,26 +1,27 @@
 /**
  * Serialize harness messages into Friendli chat completions (OpenAI-compatible).
- * User text is joined; assistant text becomes `content`, tool calls become
- * `tool_calls`, and tool-role messages become `role:'tool'` messages.
+ * User text and images become ordered OpenAI content parts; text-only messages
+ * remain strings. Assistant text becomes `content`, tool calls become
+ * `tool_calls`, and tool results become separate `role:'tool'` messages.
  * Assistant reasoning is replayed as `reasoning_content` only on tool-call
- * turns. Image content is rejected explicitly because this wire route is
- * text-only.
+ * turns. Image bytes are resolved by the attachment service before serialization.
  *
  * @module @friendliai/dsh-llm-friendli/serialize
  */
 
-import {
-  contentHasImage,
-  LlmError,
-  ReasoningEffortId,
-} from "@deepseek-ai/dsh-llm";
+import { LlmError, ReasoningEffortId } from "@deepseek-ai/dsh-llm";
 import type {
+  AssistantMessage,
   ContentBlock,
   GenerateOptions,
-  Message,
   RequestMessage,
 } from "@deepseek-ai/dsh-llm";
-import type { WireMessage, WireRequest, WireTool } from "./types.ts";
+import type {
+  WireContentPart,
+  WireMessage,
+  WireRequest,
+  WireTool,
+} from "./types.ts";
 
 /**
  * Normalize an upstream JSON Schema for Friendli: its validator rejects any
@@ -68,39 +69,61 @@ export interface RequestDefaults {
   thinking?: "enabled" | "disabled" | undefined;
 }
 
-/** Join the text blocks of a message (user/tool-result content). */
-function flattenText(blocks: readonly ContentBlock[]): string {
-  return blocks
-    .filter((block) => block.type === "text")
-    .map((block) => block.text)
-    .join("");
-}
-
-/** Reject image content before any text-flattening path can silently drop it. */
-function assertTextOnly(blocks: readonly ContentBlock[]): void {
-  if (contentHasImage(blocks)) {
-    throw new LlmError(
-      "The Friendli chat-completions adapter does not support image content.",
-      "UNSUPPORTED_CONTENT",
-    );
+/** Keep text-only requests compact; interleave image parts in their original order. */
+function userContent(
+  blocks: readonly ContentBlock[],
+  imageUrls?: ReadonlyMap<ContentBlock, string>,
+): string | WireContentPart[] {
+  let text = "";
+  let parts: WireContentPart[] | undefined;
+  for (const block of blocks) {
+    if (block.type === "text") text += block.text;
+    else if (block.type === "image") {
+      const url = imageUrls?.get(block);
+      if (url === undefined)
+        throw new LlmError(
+          "The Friendli adapter cannot serialize an image without verified attachment bytes.",
+          "UNSUPPORTED_CONTENT",
+        );
+      parts ??= [];
+      if (text) parts.push({ type: "text", text });
+      text = "";
+      parts.push({ type: "image_url", image_url: { url } });
+    } else {
+      throw new LlmError(
+        `The Friendli chat-completions adapter cannot serialize ${block.type} in text content.`,
+        "UNSUPPORTED_CONTENT",
+      );
+    }
   }
+  if (parts === undefined) return text;
+  if (text) parts.push({ type: "text", text });
+  return parts;
 }
 
 /** Serialize one assistant message (text + reasoning + tool calls). */
-function serializeAssistant(message: Message): WireMessage {
-  const text = flattenText(message.content);
-  const reasoning = message.content
-    .filter((block) => block.type === "reasoning")
-    .map((block) => block.text)
-    .join("");
-  const toolCalls = message.content
-    .filter((block) => block.type === "tool-call")
-    .map((block) => ({
-      id: block.id,
-      type: "function" as const,
-      function: { name: block.name, arguments: block.arguments },
-    }));
-
+function serializeAssistant(message: AssistantMessage): WireMessage {
+  let text = "";
+  let reasoning = "";
+  const toolCalls: NonNullable<
+    Extract<WireMessage, { role: "assistant" }>["tool_calls"]
+  > = [];
+  for (const block of message.content) {
+    if (block.type === "text") text += block.text;
+    else if (block.type === "reasoning") reasoning += block.text;
+    else if (block.type === "tool-call") {
+      toolCalls.push({
+        id: block.id,
+        type: "function",
+        function: { name: block.name, arguments: block.arguments },
+      });
+    } else {
+      throw new LlmError(
+        `The Friendli chat-completions adapter cannot serialize ${block.type} in assistant content.`,
+        "UNSUPPORTED_CONTENT",
+      );
+    }
+  }
   return {
     role: "assistant",
     // Text-less turns send "" — never null; some gateways reject null content.
@@ -114,30 +137,37 @@ function serializeAssistant(message: Message): WireMessage {
 }
 
 /**
- * Serialize request history in order. Tool results are first-class tool-role
- * messages; request-only user input has the same content shape as a logged user
- * message. Developer tool updates have no wire representation; their text
- * instructions, if any, are sent as system messages.
+ * Serialize ordered request history, including one-shot user inputs and
+ * first-class tool-role results. This route does not advertise in-history tool
+ * updates; developer messages must not be turned into user instructions.
+ * @param messages - the harness request history, in order.
+ * @returns the wire messages; order preserved.
  */
 export function serializeMessages(
   messages: readonly RequestMessage[],
+  imageUrls?: ReadonlyMap<ContentBlock, string>,
 ): WireMessage[] {
   const wire: WireMessage[] = [];
   for (const message of messages) {
-    assertTextOnly(message.content);
-    if (message.role === "tool") {
+    if (message.role === "developer") {
+      throw new LlmError(
+        "The Friendli chat-completions adapter does not support developer messages or in-history tool updates.",
+        "UNSUPPORTED_TOOL_UPDATE",
+      );
+    }
+    if (message.role === "assistant") {
+      wire.push(serializeAssistant(message));
+    } else if (message.role === "tool") {
       wire.push({
         role: "tool",
         tool_call_id: message.toolCallId,
-        content: flattenText(message.content) || "(no output)",
+        content: userContent(message.content, imageUrls),
       });
-    } else if (message.role === "assistant") {
-      wire.push(serializeAssistant(message));
-    } else if (message.role === "system" || message.role === "developer") {
-      const text = flattenText(message.content);
-      if (text.length > 0) wire.push({ role: "system", content: text });
     } else {
-      wire.push({ role: "user", content: flattenText(message.content) });
+      wire.push({
+        role: message.role,
+        content: userContent(message.content, imageUrls),
+      });
     }
   }
   return wire;
@@ -210,12 +240,13 @@ function resolveReasoning(
 export function serializeRequest(
   options: GenerateOptions,
   defaults: RequestDefaults = {},
+  imageUrls?: ReadonlyMap<ContentBlock, string>,
 ): WireRequest {
   const messages: WireMessage[] = [];
   if (options.system !== undefined) {
     messages.push({ role: "system", content: options.system });
   }
-  messages.push(...serializeMessages(options.messages));
+  messages.push(...serializeMessages(options.messages, imageUrls));
 
   const tools: WireTool[] | undefined = options.tools?.map((tool) => ({
     type: "function",

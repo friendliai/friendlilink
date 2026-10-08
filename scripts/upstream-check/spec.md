@@ -1,6 +1,8 @@
 # upstream-check spec
 
-Daily CI (`upstream-compat-watch`, `.github/workflows/upstream-compat-watch.yml`) that watches upstream agent CLI versions and reports compat results to Slack. Cursor is out of scope (no machine-readable version source).
+Daily CI (`upstream-compat-watch`, `.github/workflows/upstream-compat-watch.yml`)
+watches upstream agent CLI versions and reports compat results to Slack.
+Cursor is out of scope (no machine-readable version source).
 
 ## Watched packages (npm dist-tags.latest)
 

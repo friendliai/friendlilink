@@ -49,8 +49,9 @@ describe("verifyFriendliApiKey", () => {
 
     const result = await verifyFriendliApiKey("bogus-key-12345");
 
-    expect(result).toMatchObject({
+    expect(result).toEqual({
       ok: false,
+      message: "FriendliAI rejected the API key.",
     });
     const chatCall = fetchMock.mock.calls.find(([url]) =>
       String(url).endsWith("/chat/completions"),
