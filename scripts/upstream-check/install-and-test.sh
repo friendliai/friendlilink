@@ -68,13 +68,23 @@ fi
 # failure cannot mark another harness's update as incompatible.
 run_hermes_plugin() {
   local sandbox runtime python status=0
-  python="$(find "$HOME/.hermes/installs" -path '*/workspace/venv/bin/python' -print -quit)"
+  # Select this checkout's committed generation, not an arbitrary old venv.
+  python="$(node --input-type=module - "$HOME/.hermes/hermes-agent" "$HOME/.hermes/installs" <<'JS'
+import { createHash } from "node:crypto";
+import { readFileSync, realpathSync } from "node:fs";
+import { join } from "node:path";
+
+const key = createHash("sha256").update(realpathSync(process.argv[2])).digest("hex").slice(0, 16);
+const facts = JSON.parse(readFileSync(join(process.argv[3], key, "facts.json"), "utf8"));
+console.log(join(facts.packages.venv.environment, "bin", "python"));
+JS
+  )"
   if [[ -z "$python" || ! -x "$python" ]]; then
     echo "could not find the Python environment for the installed Hermes runtime"
     return 1
   fi
   sandbox="$(mktemp -d)"
-  runtime="${python%/venv/bin/python}"
+  runtime="${python%/venv/bin/python}/workspace"
   mkdir -p "$sandbox/plugins/model-providers"
   ln -s "$PWD/packages/hermes-friendli-provider" "$sandbox/plugins/model-providers/friendli"
   HERMES_HOME="$sandbox" PYTHONPATH="$runtime${PYTHONPATH:+:$PYTHONPATH}" \
