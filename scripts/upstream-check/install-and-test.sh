@@ -8,9 +8,9 @@
 # throwaway sandbox (the shell-script twin of test/helpers.ts
 # createSandboxHome()). Hermes is intentionally omitted from the env override:
 # its tests create their own per-test homes, and hermesHome() must resolve
-# those paths from the test context. Reports skipped tests as failure: with the real CLI
-# installed, describe.skipIf(binary) must not skip — a skip here means the new
-# version broke the probe or the install, and a "pass" would be misleading.
+# those paths from the test context. Reports skipped tests as failure: with the
+# real CLI installed, describe.skipIf(binary) must not skip — a skip here means
+# the new version broke the probe or the install, and a "pass" would be misleading.
 #
 # Exit codes (consumed by the workflow unit step's outcome):
 #   0 = unit pass, nonzero = unit fail (or install fail — indistinguishable
@@ -67,13 +67,28 @@ fi
 # on the Hermes leg, against the exact runtime installed above, so a provider
 # failure cannot mark another harness's update as incompatible.
 run_hermes_plugin() {
-  local sandbox runtime status=0
+  local sandbox runtime python status=0
+  # Select this checkout's committed generation, not an arbitrary old venv.
+  python="$(node --input-type=module - "$HOME/.hermes/hermes-agent" "$HOME/.hermes/installs" <<'JS'
+import { createHash } from "node:crypto";
+import { readFileSync, realpathSync } from "node:fs";
+import { join } from "node:path";
+
+const key = createHash("sha256").update(realpathSync(process.argv[2])).digest("hex").slice(0, 16);
+const facts = JSON.parse(readFileSync(join(process.argv[3], key, "facts.json"), "utf8"));
+console.log(join(facts.packages.venv.environment, "bin", "python"));
+JS
+  )"
+  if [[ -z "$python" || ! -x "$python" ]]; then
+    echo "could not find the Python environment for the installed Hermes runtime"
+    return 1
+  fi
   sandbox="$(mktemp -d)"
-  runtime="$HOME/.hermes/hermes-agent"
+  runtime="${python%/venv/bin/python}/workspace"
   mkdir -p "$sandbox/plugins/model-providers"
   ln -s "$PWD/packages/hermes-friendli-provider" "$sandbox/plugins/model-providers/friendli"
   HERMES_HOME="$sandbox" PYTHONPATH="$runtime${PYTHONPATH:+:$PYTHONPATH}" \
-    uv run --no-project --python "$runtime/venv/bin/python" --with pytest \
+    uv run --no-project --python "$python" --with pytest \
       python -m pytest packages/hermes-friendli-provider/test_friendli_profile.py \
       packages/hermes-friendli-provider/test_transport_kwargs.py -q || status=$?
   rm -rf "$sandbox"

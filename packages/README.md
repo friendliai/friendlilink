@@ -12,4 +12,4 @@ Their published homes are the contract, not this repo path: the dsh package publ
 ## Development
 
 - `@friendliai/dsh-llm-friendli`: `pnpm install && pnpm --filter @friendliai/dsh-llm-friendli run lint:all && pnpm --filter @friendliai/dsh-llm-friendli run build` (pnpm workspace — the root `pnpm-workspace.yaml` includes this package).
-- `hermes-friendli-provider`: Python plugin, tested against a Hermes checkout (`~/.hermes/hermes-agent` with its venv): `test_friendli_profile.py` / `test_transport_kwargs.py` in that directory.
+- `hermes-friendli-provider`: Python plugin, tested against the installed Hermes runtime: `test_friendli_profile.py` / `test_transport_kwargs.py` in this package. From the repo root, `bash scripts/upstream-check/install-and-test.sh hermes <version>` installs Hermes and runs both the provider and harness suites. The runner selects the active venv from the install's `facts.json` and adds its sibling `workspace` to `PYTHONPATH`; `uv` overlays pytest without modifying runtime dependencies.
