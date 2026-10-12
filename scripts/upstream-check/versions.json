@@ -3,6 +3,6 @@
   "@openai/codex": "0.162.1",
   "@deepseek-ai/dsh-llm": "0.0.1-rc.1",
   "hermes-agent": "0.21.6",
-  "opencode-ai": "1.18.35",
+  "opencode-ai": "1.19.0",
   "@earendil-works/pi-coding-agent": "1.1.0"
 }
