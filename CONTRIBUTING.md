@@ -13,7 +13,7 @@ git ref disagrees with published metadata.
 | ------------------------------ | ----------------------------------------------- | --------------------------------------- | ------------------------------------------------- |
 | `frlink` (CLI)                 | root `package.json` → `"version"`               | `frlink@<semver>`                       | Not published — `install.sh` builds from checkout |
 | `@friendliai/dsh-llm-friendli` | `packages/dsh-llm-friendli/package.json`        | `@friendliai/dsh-llm-friendli@<semver>` | `npm publish` (manual)                            |
-| `hermes-friendli-provider`     | `packages/hermes-friendli-provider/plugin.yaml` | `hermes-friendli-provider@<semver>`     | CI pushes directly to the mirror repo             |
+| `hermes-friendli-provider`     | `packages/hermes-friendli-provider/plugin.yaml` | `hermes-friendli-provider@<semver>`     | CI syncs to the mirror repo; merging publishes    |
 
 ### Cutting a release
 
@@ -35,22 +35,6 @@ is trusted. For `@friendliai/dsh-llm-friendli`, publish to npm after the tag is 
 cd packages/dsh-llm-friendli && pnpm publish
 ```
 
-For `hermes-friendli-provider`, no manual publish — a push changing
-`packages/hermes-friendli-provider/**` on `main` triggers
-`.github/workflows/sync-hermes-plugin.yml`. It copies the plugin directory to
-`friendliai/hermes-friendliai-provider` and publishes with a fast-forward push
-to the mirror's `main`. No mirror PR or target-side sync workflow is needed.
-The workflow can also be run manually; unchanged content skips the push.
-
-The source repo's `HERMES_MIRROR_DEPLOY_KEY` Actions secret holds the private
-SSH key for the mirror's write-enabled `friendlilink mirror sync` deploy key.
-It grants access only to that mirror; `WEB_GITHUB_TOKEN` is not used for sync.
-Rotate the public deploy key and the source secret together.
-
-The mirror's `Mirror sync PR policy` ruleset requires one approval and code
-owner review for other writers, preserving the existing Lee-Si-Yoon and
-Dependabot bypasses. Deploy keys bypass only this PR requirement; the separate
-classic branch protection still forbids force pushes and branch deletion.
-GitHub applies the ruleset bypass to the deploy-key actor type, not an
-individual key. Keep the sync key as the mirror's only write deploy key:
-additional write deploy keys would inherit the same PR bypass.
+For `hermes-friendli-provider`, no manual publish — the same push that changed
+`plugin.yaml` triggers `.github/workflows/sync-hermes-plugin.yml` (on merge to
+`main`), which opens a PR on the mirror repo; merging that PR publishes.
