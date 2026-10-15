@@ -68,6 +68,7 @@ function thinkingLevelMapFor(
 export interface PiModelEntry {
   id: string;
   reasoning: boolean;
+  input: ["text"] | ["text", "image"];
   compat?: PiCompat;
   thinkingLevelMap?: PiThinkingLevelMap;
 }
@@ -103,9 +104,20 @@ export interface PiModelEntry {
 export function buildPiModelEntry(
   model: Pick<
     FriendliModel,
-    "id" | "reasoning" | "reasoningToggle" | "reasoningEffortLevels"
+    | "id"
+    | "reasoning"
+    | "reasoningToggle"
+    | "reasoningEffortLevels"
+    | "inputModalities"
   >,
 ): PiModelEntry {
+  // Pi 0.85.1 and 1.2.0 only accept text/image in both model input and
+  // UserMessage content; their OpenAI serializer has no video_url branch.
+  // Keep the valid capabilities here, not an unsupported "video" enum value.
+  // See upstream packages/ai/src/providers/model-schema.ts and types.ts.
+  const input: PiModelEntry["input"] = model.inputModalities?.includes("image")
+    ? ["text", "image"]
+    : ["text"];
   const hasEffortLevels = (model.reasoningEffortLevels?.length ?? 0) > 0;
   const thinkingLevelMap = thinkingLevelMapFor(
     model.reasoningEffortLevels,
@@ -130,6 +142,7 @@ export function buildPiModelEntry(
     return {
       id: model.id,
       reasoning: true,
+      input,
       compat,
       thinkingLevelMap,
     };
@@ -138,6 +151,7 @@ export function buildPiModelEntry(
   return {
     id: model.id,
     reasoning,
+    input,
     ...(reasoning ? { thinkingLevelMap } : {}),
   };
 }

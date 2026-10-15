@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildCodexCatalog,
   type CodexCatalogTemplate,
+  type CodexModelEntry,
 } from "../../../src/harnesses/codex/model-catalog.js";
 import type { FriendliModel } from "../../../src/friendli/model-catalog.js";
 
@@ -46,6 +47,39 @@ describe("buildCodexCatalog", () => {
     ]);
     expect(models.map((m) => m.priority)).toEqual([1, 2, 3]);
     expect(models.every((m) => m.visibility === "list")).toBe(true);
+  });
+
+  it("serializes each model's native input modalities instead of inheriting global vision", () => {
+    const catalog: FriendliModel[] = [
+      { id: "text", label: "Text", inputModalities: ["text"] },
+      { id: "image", label: "Image", inputModalities: ["text", "image"] },
+      { id: "video", label: "Video", inputModalities: ["text", "video"] },
+      {
+        id: "multimodal",
+        label: "Multimodal",
+        inputModalities: ["text", "image", "video"],
+      },
+      { id: "audio", label: "Audio", inputModalities: ["text", "audio"] },
+      { id: "missing", label: "Missing" },
+      { id: "empty", label: "Empty", inputModalities: [] },
+    ];
+    const written = JSON.parse(
+      JSON.stringify(buildCodexCatalog(catalog, TEMPLATE)),
+    );
+    expect(
+      written.models.map((model: CodexModelEntry) => ({
+        id: model.slug,
+        input: model.input_modalities,
+      })),
+    ).toEqual([
+      { id: "text", input: ["text"] },
+      { id: "image", input: ["text", "image"] },
+      { id: "video", input: ["text"] },
+      { id: "multimodal", input: ["text", "image"] },
+      { id: "audio", input: ["text", "audio"] },
+      { id: "missing", input: ["text"] },
+      { id: "empty", input: [] },
+    ]);
   });
 
   /** The point of the feature: real rungs per model, never a generic set,
@@ -144,6 +178,7 @@ describe("buildCodexCatalog", () => {
       for (const field of [
         "slug",
         "display_name",
+        "input_modalities",
         "supported_reasoning_levels",
         "shell_type",
         "visibility",

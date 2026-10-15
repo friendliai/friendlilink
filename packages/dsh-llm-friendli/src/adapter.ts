@@ -16,7 +16,6 @@ import {
 } from "@deepseek-ai/dsh-llm";
 import type {
   GenerateOptions,
-  ContentBlock,
   ImageBlock,
   LlmModelInfo,
   LlmModelReasoningInfo,
@@ -28,7 +27,7 @@ import type {
 import { fetchModels } from "./models.ts";
 import type { FriendliModel } from "./models.ts";
 import { serializeRequest } from "./serialize.ts";
-import type { RequestDefaults } from "./serialize.ts";
+import type { RequestContentBlock, RequestDefaults } from "./serialize.ts";
 import { parseSse } from "./sse.ts";
 import { translate } from "./translate.ts";
 import type { WireError } from "./types.ts";
@@ -128,7 +127,13 @@ function modelInfo(provider: string, model: FriendliModel): LlmModelInfo {
     provider,
     id: model.id,
     name: model.name,
-    inputModalities: model.inputModalities,
+    // DSH currently has no native video block or file-to-media projection.
+    // Preserve the complete provider catalog separately; never claim that the
+    // harness route can carry a modality its request assembly cannot deliver.
+    inputModalities: model.inputModalities.filter(
+      (modality): modality is "text" | "image" =>
+        modality === "text" || modality === "image",
+    ),
   };
 }
 
@@ -220,10 +225,15 @@ export class FriendliAdapter extends LlmAdapter {
         ? consumer.signal
         : AbortSignal.any([options.signal, consumer.signal]);
 
-    let imageUrls: Map<ContentBlock, string> | undefined;
-    for (const message of options.messages) {
-      if (message.role !== "user" && message.role !== "tool") continue;
-      for (const block of message.content) {
+    let imageUrls: Map<RequestContentBlock, string> | undefined;
+    const resolveImages = async (
+      blocks: readonly RequestContentBlock[],
+    ): Promise<void> => {
+      for (const block of blocks) {
+        if (block.type === "tool-result") {
+          await resolveImages(block.content);
+          continue;
+        }
         if (block.type !== "image") continue;
         if (this.config.attachments === undefined)
           throw new LlmError(
@@ -244,6 +254,10 @@ export class FriendliAdapter extends LlmAdapter {
           `data:${ref.mediaType};base64,${encoded}`,
         );
       }
+    };
+    for (const message of options.messages) {
+      if (message.role === "user" || message.role === "tool")
+        await resolveImages(message.content);
     }
 
     const body = serializeRequest(options, connection.defaults, imageUrls);

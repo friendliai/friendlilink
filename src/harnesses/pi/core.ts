@@ -73,10 +73,10 @@ export async function isFriendliManaged(
 /**
  * Single write path for `pi on`. models.json gets the FriendliAI-guide
  * provider block (custom OpenAI-completions) with the full live catalog, or
- * the picked model alone if the catalog is unreachable. Entries only ADD
- * (see ./catalog.ts) the off-switch + role-pin shapes; Pi renders the
- * /thinking level itself. Session start level is Pi's call — frlink doesn't
- * seed modelThinkingLevels. settings.json points the default at it;
+ * the picked model alone if the catalog is empty. Entries include per-model
+ * input capabilities and the off-switch + role-pin shapes (see ./catalog.ts);
+ * Pi renders the /thinking level itself. Session start level is Pi's call —
+ * frlink doesn't seed modelThinkingLevels. settings.json points the default at it;
  * auth.json is NOT touched (custom providers keep their key in models.json).
  */
 export async function enableFriendliForPi(options: {
@@ -125,7 +125,7 @@ export async function enableFriendliForPi(options: {
         // (reasoning_options) — without one there's nothing to calibrate
         // against, so this passes reasoning_effort through untouched, same
         // as the guide's hand-setup shape.
-        [{ id: model, reasoning: true }];
+        [{ id: model, reasoning: true, input: ["text"] }];
   const { value: modelsConfig } = await readJsonIfExists<{
     providers?: Record<string, unknown>;
   }>(modelsPath);

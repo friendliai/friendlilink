@@ -206,3 +206,34 @@ class TestNoReasoningConfigLeavesCleanWire:
         assert "reasoning_budget" not in body
         assert "reasoning_effort" not in body
         assert "extra_body" not in body
+
+
+class TestNativeMediaWire:
+    """The native Hermes media shapes survive the profile and OpenAI SDK."""
+
+    @pytest.mark.parametrize("part_type,source", [
+        ("image_url", "https://example.com/image.png"),
+        ("video_url", "https://example.com/video.mp4"),
+        ("video_url", "data:video/mp4;base64,AAAAIGZ0eXBpc29t"),
+    ])
+    def test_media_content_is_not_dropped_or_converted_to_frames(self, part_type, source):
+        from tools.vision_tools import _media_messages
+
+        messages = _media_messages("Describe the media.", part_type, source)
+        kwargs = ChatCompletionsTransport().build_kwargs(
+            model="zai-org/GLM-5.3-Flash",
+            messages=messages,
+            tools=None,
+            provider_profile=_profile(),
+            base_url=FRIENDLI_BASE_URL,
+            provider_name="friendli",
+        )
+        client, captured = _create_capturing_client()
+        try:
+            client.chat.completions.create(**kwargs)
+        finally:
+            client.close()
+        assert captured["body"]["messages"] == messages
+        assert captured["body"]["messages"][0]["content"][1] == {
+            "type": part_type, part_type: {"url": source},
+        }

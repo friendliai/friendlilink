@@ -33,17 +33,26 @@ describe("normalizeModel", () => {
     });
   });
 
-  it("uses catalog image capability without advertising unsupported video", () => {
+  it("retains every provider input modality without conflating route support", () => {
     expect(
       normalizeModel({
         id: "zai-org/GLM-5.3-Flash",
         input_modalities: ["text", "image", "video"],
       })?.inputModalities,
-    ).toEqual(["text", "image"]);
+    ).toEqual(["text", "image", "video"]);
     expect(
       normalizeModel({ id: "text-only", input_modalities: ["text"] })
         ?.inputModalities,
     ).toEqual(["text"]);
+  });
+
+  it("keeps provider-only modalities and validates catalog values without inventing text", () => {
+    expect(
+      normalizeModel({
+        id: "future",
+        input_modalities: ["video", null, "audio", "video", "", 4],
+      })?.inputModalities,
+    ).toEqual(["video", "audio"]);
   });
 
   it("drops a deprecated entry", () => {

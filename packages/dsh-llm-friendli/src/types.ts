@@ -54,7 +54,7 @@ export interface WireTextMessage {
 export interface WireToolMessage {
   role: "tool";
   tool_call_id: string;
-  content: string | WireContentPart[];
+  content: string;
 }
 
 /** Assistant history message; `content` is `""` (never null) on tool-only turns. */

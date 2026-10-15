@@ -39,8 +39,8 @@ export interface FriendliModel {
   reasoning: boolean;
   /** Advertised reasoning controls; empty when the model exposes none. */
   reasoningOptions: readonly ReasoningCapability[];
-  /** Supported request modalities this adapter can serialize. */
-  inputModalities: readonly ("text" | "image")[];
+  /** Provider-advertised inputs, including modalities the harness cannot carry yet. */
+  inputModalities: readonly string[];
 }
 
 /** A positive integer, or `undefined` when absent/unusable. */
@@ -87,12 +87,16 @@ export function normalizeModel(
     return undefined;
   const contextWindow = positiveInt(entry.context_length);
   const maxTokens = positiveInt(entry.max_completion_tokens);
-  const inputModalities: ("text" | "image")[] = ["text"];
-  if (
-    Array.isArray(entry.input_modalities) &&
-    entry.input_modalities.includes("image")
-  )
-    inputModalities.push("image");
+  const inputModalities = Array.isArray(entry.input_modalities)
+    ? [
+        ...new Set(
+          entry.input_modalities.filter(
+            (modality): modality is string =>
+              typeof modality === "string" && modality.length > 0,
+          ),
+        ),
+      ]
+    : ["text"];
   return {
     id,
     name: nonEmpty(entry.name) ?? id,

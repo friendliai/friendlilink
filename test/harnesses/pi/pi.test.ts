@@ -129,6 +129,41 @@ describe("pi core", () => {
     expect(piModelsPath(sandbox.home)).toBe(path.join(agentDir, "models.json"));
   });
 
+  it("writes per-model image capabilities into the config Pi consumes", async () => {
+    const catalog = [
+      { id: "test/text", label: "Text", inputModalities: ["text"] },
+      { id: "test/image", label: "Image", inputModalities: ["text", "image"] },
+      {
+        id: "test/toggle-image",
+        label: "Toggle image",
+        reasoningToggle: true,
+        inputModalities: ["text", "image", "video"],
+      },
+      { id: "test/video", label: "Video", inputModalities: ["text", "video"] },
+      { id: "test/missing", label: "Missing" },
+      { id: "test/empty", label: "Empty", inputModalities: [] },
+    ];
+    await enable(sandbox, { catalog });
+    const config = JSON.parse(
+      await readFile(piModelsPath(sandbox.home), "utf8"),
+    );
+    expect(
+      config.providers["friendliai-chat-completions"].models.map(
+        (model: { id: string; input: string[] }) => ({
+          id: model.id,
+          input: model.input,
+        }),
+      ),
+    ).toEqual([
+      { id: "test/text", input: ["text"] },
+      { id: "test/image", input: ["text", "image"] },
+      { id: "test/toggle-image", input: ["text", "image"] },
+      { id: "test/video", input: ["text"] },
+      { id: "test/missing", input: ["text"] },
+      { id: "test/empty", input: ["text"] },
+    ]);
+  });
+
   it("writes the guide's provider block with off-switch compat where supported", async () => {
     const originalModels = '{ "providers": { "openai": { "models": [] } } }\n';
     const originalSettings = '{ "theme": "dark" }\n';
@@ -155,6 +190,7 @@ describe("pi core", () => {
         {
           id: "zai-org/GLM-5.2",
           reasoning: true,
+          input: ["text"],
           compat: {
             thinkingFormat: "chat-template",
             chatTemplateKwargs: {
@@ -179,6 +215,7 @@ describe("pi core", () => {
         {
           id: "deepseek-ai/DeepSeek-V3.2",
           reasoning: true,
+          input: ["text"],
           compat: {
             thinkingFormat: "chat-template",
             supportsDeveloperRole: false,
@@ -253,7 +290,7 @@ describe("pi core", () => {
     });
   });
 
-  it("registers only the picked model when the catalog is unreachable", async () => {
+  it("registers only the picked text-only model when the catalog is empty", async () => {
     await enable(sandbox, { catalog: [] });
 
     const models = JSON.parse(
@@ -263,7 +300,7 @@ describe("pi core", () => {
     // (reasoning_options); without one, even a switch model like GLM-5.2
     // registers plain — degraded, but matches the guide's hand-setup shape.
     expect(models.providers["friendliai-chat-completions"].models).toEqual([
-      { id: MODEL, reasoning: true },
+      { id: MODEL, reasoning: true, input: ["text"] },
     ]);
   });
 
@@ -288,6 +325,7 @@ describe("pi core", () => {
         {
           id: "zai-org/GLM-5.2",
           reasoning: true,
+          input: ["text"],
           compat: {
             thinkingFormat: "chat-template",
             chatTemplateKwargs: {
@@ -386,6 +424,7 @@ describe("pi reasoning rules", () => {
     ).toEqual({
       id: "zai-org/GLM-5.2",
       reasoning: true,
+      input: ["text"],
       compat: {
         thinkingFormat: "chat-template",
         chatTemplateKwargs: {
@@ -414,6 +453,7 @@ describe("pi reasoning rules", () => {
     ).toEqual({
       id: "google/gemma-4-31B-it",
       reasoning: true,
+      input: ["text"],
       compat: {
         thinkingFormat: "chat-template",
         chatTemplateKwargs: { enable_thinking: { $var: "thinking.enabled" } },
@@ -429,6 +469,7 @@ describe("pi reasoning rules", () => {
     ).toEqual({
       id: "zai-org/GLM-5.1",
       reasoning: true,
+      input: ["text"],
       compat: {
         thinkingFormat: "chat-template",
         chatTemplateKwargs: { enable_thinking: { $var: "thinking.enabled" } },
@@ -450,7 +491,12 @@ describe("pi reasoning rules", () => {
           reasoning: true,
           reasoningEffortLevels: ["low", "high", "max"],
         }),
-      ).toEqual({ id, reasoning: true, thinkingLevelMap: GLM53_MAP });
+      ).toEqual({
+        id,
+        reasoning: true,
+        input: ["text"],
+        thinkingLevelMap: GLM53_MAP,
+      });
     }
     // MiniMax lists neither a toggle nor an effort option: off stays
     // excluded, and the single "medium" representative is all that's left.
@@ -459,6 +505,7 @@ describe("pi reasoning rules", () => {
     ).toEqual({
       id: "MiniMaxAI/MiniMax-M2.5",
       reasoning: true,
+      input: ["text"],
       thinkingLevelMap: NON_TOGGLE_NO_EFFORT_MAP,
     });
     // A model the catalog doesn't flag as reasoning gets no map at all:
@@ -469,6 +516,7 @@ describe("pi reasoning rules", () => {
     ).toEqual({
       id: "unknown/org/model",
       reasoning: false,
+      input: ["text"],
     });
   });
 
@@ -500,6 +548,7 @@ describe("pi reasoning rules", () => {
     expect(entries[0]).toEqual({
       id: "google/gemma-4-31B-it",
       reasoning: true,
+      input: ["text"],
       compat: {
         thinkingFormat: "chat-template",
         chatTemplateKwargs: { enable_thinking: { $var: "thinking.enabled" } },
@@ -509,6 +558,7 @@ describe("pi reasoning rules", () => {
     expect(entries[1]).toEqual({
       id: "zai-org/GLM-5.1",
       reasoning: true,
+      input: ["text"],
       compat: {
         thinkingFormat: "chat-template",
         chatTemplateKwargs: { enable_thinking: { $var: "thinking.enabled" } },

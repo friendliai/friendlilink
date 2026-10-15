@@ -80,13 +80,15 @@ range for the ``reasoning_budget`` integer field — this plugin only ever
 sends ``0`` on that field (the verified disable value) and never reads its
 ``min``/``max`` for anything else. A model can publish more than one —
 GLM-5.2 exposes both ``toggle`` and ``effort`` (its 2-level ``high``/``max``
-enum), DeepSeek-V3.2 exposes only ``toggle``. This plugin fetches that
-catalog lazily (never blocking a request on network I/O — see
-:func:`supported_reasoning_efforts`'s docstring and the
-``providers.base.ProviderProfile`` contract it implements) and drives both
-the enable/disable/effort logic and the reasoning-vocabulary lookup from it,
-so a new GLM/DeepSeek/MiniMax release with a different effort ladder is
-picked up automatically instead of needing a code change here.
+enum), DeepSeek-V3.2 exposes only ``toggle``. The same catalog's
+``input_modalities`` is preserved in full, including video and future modality
+names, in memory and on disk. Hermes' ``model_capabilities.supports_vision``
+is specifically an image gate, not a declaration of every input modality.
+Native video uses Hermes' ``video_analyze`` tool and ``video_url`` content
+parts; it is not converted into image frames. This plugin restores cached
+metadata at load and refreshes a cold/stale cache in the background, never
+blocking a request on Friendli catalog HTTP. One model listing warms both
+reasoning and input metadata without per-model code changes.
 """
 
 from __future__ import annotations
@@ -124,10 +126,10 @@ FALLBACK_MODELS: tuple[str, ...] = (
 _DISABLE_EFFORT_WORDS = frozenset({"none", "false", "disabled"})
 
 # ---------------------------------------------------------------------------
-# Live catalog cache: model id -> {"reasoning": bool, "effort": tuple[str,...],
-# "toggle": bool}. Populated by fetch_models() (picker/setup/doctor) and by a
-# background warmer; consulted cache-only from build_api_kwargs_extras() and
-# supported_reasoning_efforts() so neither blocks a chat turn on network I/O.
+# Live catalog cache: model id -> reasoning shape and optional input_modalities.
+# Populated by fetch_models() (picker/setup/doctor) and by a background warmer;
+# published to model_capabilities for image routing and consulted cache-only by
+# reasoning hooks so no chat turn blocks on Friendli catalog network I/O.
 # Mirrors the Ramp Router capability-cache design in
 # plugins/model-providers/router/__init__.py.
 # ---------------------------------------------------------------------------
@@ -140,6 +142,7 @@ _disk_checked = False
 # Reasoning vocabularies change rarely; a stale disk mirror still beats no
 # verdict at all, so it's served immediately while a background refresh runs.
 _DISK_TTL_SECONDS = 24 * 60 * 60
+_DISK_SCHEMA_VERSION = 2  # v1 omitted input modalities; refresh it even when fresh.
 
 
 def _resolve_api_key() -> str:
@@ -164,7 +167,7 @@ def _resolve_api_key() -> str:
 
 
 def _parse_catalog(items: Any) -> Optional[dict[str, dict[str, Any]]]:
-    """Parse a Friendli ``/models`` ``data`` array into the reasoning-shape map.
+    """Parse Friendli ``/models`` entries into reasoning and modality metadata.
 
     Returns ``None`` when the array has no usable entries, so callers treat
     that as a failed fetch rather than caching an empty verdict.
@@ -198,6 +201,9 @@ def _parse_catalog(items: Any) -> Optional[dict[str, dict[str, Any]]]:
             "effort": effort_values,
             "toggle": has_toggle,
         }
+        modalities = item.get("input_modalities")
+        if isinstance(modalities, list) and all(isinstance(v, str) for v in modalities):
+            catalog[mid]["input_modalities"] = tuple(modalities)
     return catalog or None
 
 
@@ -218,10 +224,18 @@ def _save_disk(catalog: dict[str, dict[str, Any]]) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_suffix(".tmp")
         serializable = {
-            mid: {"reasoning": e["reasoning"], "effort": list(e["effort"]), "toggle": e["toggle"]}
+            mid: {
+                "reasoning": e["reasoning"],
+                "effort": list(e["effort"]),
+                "toggle": e["toggle"],
+                **({"input_modalities": list(e["input_modalities"])} if "input_modalities" in e else {}),
+            }
             for mid, e in catalog.items()
         }
-        tmp.write_text(json.dumps({"ts": time.time(), "catalog": serializable}), encoding="utf-8")
+        tmp.write_text(
+            json.dumps({"version": _DISK_SCHEMA_VERSION, "ts": time.time(), "catalog": serializable}),
+            encoding="utf-8",
+        )
         tmp.replace(path)
     except Exception as exc:
         logger.debug("friendli: catalog disk mirror write failed: %s", exc)
@@ -241,6 +255,12 @@ def _load_disk() -> tuple[Optional[dict[str, dict[str, Any]]], float]:
                 "reasoning": bool(e.get("reasoning")),
                 "effort": tuple(str(v) for v in (e.get("effort") or [])),
                 "toggle": bool(e.get("toggle")),
+                **(
+                    {"input_modalities": tuple(e["input_modalities"])}
+                    if isinstance(e.get("input_modalities"), list)
+                    and all(isinstance(v, str) for v in e["input_modalities"])
+                    else {}
+                ),
             }
             for mid, e in raw.items()
             if isinstance(e, dict)
@@ -249,19 +269,36 @@ def _load_disk() -> tuple[Optional[dict[str, dict[str, Any]]], float]:
             age = max(0.0, time.time() - float(data.get("ts") or 0))
         except (TypeError, ValueError):
             age = float(_DISK_TTL_SECONDS)
+        if data.get("version") != _DISK_SCHEMA_VERSION:
+            age = max(age, float(_DISK_TTL_SECONDS))
         return (parsed or None), age
     except Exception:
         return None, 0.0
 
 
+def _publish_catalog(catalog: dict[str, dict[str, Any]]) -> None:
+    """Publish the full catalog and Hermes' supported exact-model image gate.
+
+    ModelCapabilities has no input_modalities or supports_video field. Do not
+    invent one or interpret video as image support: video_analyze already
+    sends native video_url content through Hermes' auxiliary transport.
+    """
+    global _catalog_cache
+    _catalog_cache = catalog
+    friendli.model_capabilities = {
+        mid: {"supports_vision": "image" in entry["input_modalities"]}
+        for mid, entry in catalog.items()
+        if "input_modalities" in entry
+    }
+
+
 def _seed_catalog(items: Any) -> Optional[dict[str, dict[str, Any]]]:
     """Seed memory + disk caches from a ``/models`` payload."""
-    global _catalog_cache
     parsed = _parse_catalog(items)
     if parsed is None:
         return None
     with _catalog_lock:
-        _catalog_cache = parsed
+        _publish_catalog(parsed)
     _save_disk(parsed)
     return parsed
 
@@ -306,7 +343,7 @@ def _catalog_cache_only() -> Optional[dict[str, dict[str, Any]]]:
         return None
     with _catalog_lock:
         if _catalog_cache is None:
-            _catalog_cache = parsed
+            _publish_catalog(parsed)
         cached = _catalog_cache
     if age >= _DISK_TTL_SECONDS:
         _warm_catalog_async()
@@ -341,7 +378,7 @@ def _warm_catalog_async() -> None:
 
 
 def _catalog_entry(model: Optional[str]) -> Optional[dict[str, Any]]:
-    """Cache-only lookup of the reasoning shape for *model*, or ``None``."""
+    """Cache-only lookup of catalog metadata for *model*, or ``None``."""
     mid = str(model or "").strip()
     if not mid:
         return None
@@ -362,14 +399,14 @@ class FriendliProfile(ProviderProfile):
         base_url: Optional[str] = None,
         timeout: float = 8.0,
     ) -> Optional[list[str]]:
-        """Fetch the live catalog and seed the reasoning-capability cache.
+        """Fetch the live catalog and seed reasoning and all input modalities.
 
         Friendli's ``/models`` response is already OpenAI-compatible
         (``{"data": [{"id": ..., ...}]}``), so the base implementation would
         work for the picker alone — but it only extracts ``id``. Overriding
         lets one request also warm :func:`_catalog_entry`'s cache with each
-        model's ``reasoning``/``reasoning_options`` shape, at no extra
-        network cost (same trick as the Ramp Router profile).
+        model's reasoning shape and input modalities, at no extra network
+        cost (same trick as the Ramp Router profile).
         """
         items = _fetch_catalog_items(
             api_key=api_key or "", base_url=base_url or "", timeout=timeout
@@ -379,6 +416,30 @@ class FriendliProfile(ProviderProfile):
         _seed_catalog(items)
         ids = [str(item["id"]) for item in items if isinstance(item, dict) and item.get("id")]
         return ids or None
+
+    def default_vision_model(self) -> Optional[str]:
+        """Choose a catalog-backed default for Hermes' shared image/video task.
+
+        video_analyze also uses task="vision", so an image-only default would
+        break native video even when a video model is available. Require both
+        media types when the catalog offers video. No catalog verdict means no
+        provider default; the caller retains its normal fallback policy.
+        """
+        catalog = _catalog_cache_only()
+        if catalog is None:
+            _warm_catalog_async()
+            return None
+        required = {"image"}
+        if any("video" in entry.get("input_modalities", ()) for entry in catalog.values()):
+            required.add("video")
+        fallback = None
+        for mid, entry in catalog.items():
+            if required.issubset(entry.get("input_modalities", ())):
+                if mid == self.default_aux_model:
+                    return mid
+                if fallback is None:
+                    fallback = mid
+        return fallback
 
     def supported_reasoning_efforts(self, model: Optional[str]) -> Optional[tuple[str, ...]]:
         """Catalog-declared effort vocabulary for *model* (cache-only).
@@ -502,3 +563,9 @@ friendli = FriendliProfile(
 )
 
 register_provider(friendli)
+
+# Image routing reads model_capabilities directly, without a reasoning hook.
+# Restore the same disk mirror and, on a cold/stale cache, start the existing
+# once-per-process background warmer. Never block plugin loading on HTTP.
+if _catalog_cache_only() is None:
+    _warm_catalog_async()

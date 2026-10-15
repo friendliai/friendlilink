@@ -41,6 +41,7 @@ export interface CodexModelEntry {
   slug: string;
   display_name: string;
   description?: string;
+  input_modalities: ("text" | "image" | "audio")[];
   supported_reasoning_levels: Array<{ effort: string; description: string }>;
   default_reasoning_level?: string;
   shell_type: string;
@@ -191,6 +192,12 @@ export function buildCodexCatalog(
         slug: model.id,
         display_name: model.label,
         ...(model.description ? { description: model.description } : {}),
+        // Codex 0.162.1's InputModality accepts text/image/audio, not video.
+        // Omitting this field defaults even text-only models to text+image.
+        input_modalities: model.inputModalities?.filter(
+          (modality) =>
+            modality === "text" || modality === "image" || modality === "audio",
+        ) ?? ["text"],
         supported_reasoning_levels: reasoningLevels(model),
         ...(fallback ? { default_reasoning_level: fallback } : {}),
         shell_type: template.shell_type,

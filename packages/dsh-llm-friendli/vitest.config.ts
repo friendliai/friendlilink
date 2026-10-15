@@ -7,6 +7,6 @@ import { defineConfig } from "vitest/config";
 // package regardless of what exists above it.
 export default defineConfig({
   test: {
-    exclude: ["**/node_modules/**", "**/*.live.test.ts"],
+    exclude: ["**/node_modules/**"],
   },
 });

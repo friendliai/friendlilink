@@ -7,11 +7,14 @@ Provider registry discovery scans $HERMES_HOME/plugins/model-providers/ on
 the first get_provider_profile() call, so the plugin loads automatically —
 no manual import needed.
 
-No live network calls: every test seeds the module's in-memory catalog
-cache directly instead of hitting api.friendli.ai/serverless/v1/models.
+No live network calls: tests seed catalog data or exercise catalog fetching
+through a local HTTP server instead of api.friendli.ai/serverless/v1/models.
 """
 
+import json
 import sys
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
@@ -42,11 +45,14 @@ def _isolated_catalog_cache():
     """Each test starts from a clean, empty cache and restores it after."""
     mod = _module()
     saved_cache, saved_disk_checked = mod._catalog_cache, mod._disk_checked
+    saved_capabilities = _profile().model_capabilities
+    _profile().model_capabilities = {}
     mod._catalog_cache, mod._disk_checked = None, True  # skip disk I/O in tests
     try:
         yield
     finally:
         mod._catalog_cache, mod._disk_checked = saved_cache, saved_disk_checked
+        _profile().model_capabilities = saved_capabilities
 
 
 # Catalog fixtures, shaped like the live api.friendli.ai/serverless/v1/models
@@ -299,3 +305,220 @@ class TestSupportedReasoningEfforts:
         _seed(None)
         p = _profile()
         assert p.supported_reasoning_efforts(EFFORT_MODEL) is None
+
+
+class TestInputModalities:
+    """Full catalog metadata, with the native image declaration kept image-only."""
+
+    PAYLOAD = [
+        {"id": "test/vision", "input_modalities": ["text", "image"], "reasoning": False},
+        {"id": "test/text", "input_modalities": ["text"], "reasoning": False},
+        {"id": "test/video", "input_modalities": ["text", "image", "video"], "reasoning": False},
+        {"id": "test/video-only", "input_modalities": ["text", "video"], "reasoning": False},
+        {"id": "test/future", "input_modalities": ["text", "audio", "future-input"], "reasoning": False},
+        {"id": "test/unknown", "reasoning": False},
+    ]
+
+    def test_fetch_models_publishes_exact_model_capabilities(self, monkeypatch, tmp_path):
+        mod = _module()
+        monkeypatch.setattr(mod, "_disk_path", lambda: tmp_path / "catalog.json")
+        payload = self.PAYLOAD
+        requests = []
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                requests.append(self.path)
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"data": payload}).encode())
+
+            def log_message(self, *_args):
+                pass
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            models = _profile().fetch_models(
+                api_key="local-test-key",
+                base_url=f"http://127.0.0.1:{server.server_port}/v1",
+            )
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join()
+
+        assert models == [item["id"] for item in payload]
+        assert requests == ["/v1/models"]
+        assert _profile().model_capabilities == {
+            "test/vision": {"supports_vision": True},
+            "test/text": {"supports_vision": False},
+            "test/video": {"supports_vision": True},
+            "test/video-only": {"supports_vision": False},
+            "test/future": {"supports_vision": False},
+        }
+        self._assert_routing(monkeypatch)
+
+    def test_every_modality_round_trips_without_a_fixed_vocabulary(self, monkeypatch, tmp_path):
+        mod = _module()
+        path = tmp_path / "catalog.json"
+        monkeypatch.setattr(mod, "_disk_path", lambda: path)
+        mod._seed_catalog(self.PAYLOAD)
+        expected = {
+            item["id"]: tuple(item["input_modalities"])
+            for item in self.PAYLOAD
+            if "input_modalities" in item
+        }
+        assert {
+            mid: entry["input_modalities"]
+            for mid, entry in mod._catalog_cache.items()
+            if "input_modalities" in entry
+        } == expected
+        disk = json.loads(path.read_text())
+        assert {
+            mid: tuple(entry["input_modalities"])
+            for mid, entry in disk["catalog"].items()
+            if "input_modalities" in entry
+        } == expected
+        mod._catalog_cache, mod._disk_checked = None, False
+        restored = mod._catalog_cache_only()
+        assert {
+            mid: entry["input_modalities"]
+            for mid, entry in restored.items()
+            if "input_modalities" in entry
+        } == expected
+        assert _profile().model_capabilities["test/video-only"] == {"supports_vision": False}
+        assert _profile().model_capabilities["test/video"] == {"supports_vision": True}
+
+    @pytest.mark.parametrize("entries,expected", [
+        ([("image", ["text", "image"]), ("video", ["text", "image", "video"])], "video"),
+        ([("image", ["text", "image"])], "image"),
+        ([("text", ["text"])], None),
+        ([("image", ["text", "image"]), ("video", ["text", "video"])], None),
+        ([("unknown", None)], None),
+    ])
+    def test_shared_media_default_requires_all_available_media(self, monkeypatch, tmp_path, entries, expected):
+        from agent.auxiliary_client import _resolve_provider_vision_default
+
+        mod = _module()
+        monkeypatch.setattr(mod, "_disk_path", lambda: tmp_path / "catalog.json")
+        mod._seed_catalog([
+            {"id": mid, **({"input_modalities": modalities} if modalities is not None else {})}
+            for mid, modalities in entries
+        ])
+        assert _profile().default_vision_model() == expected
+        assert _resolve_provider_vision_default("friendli") == expected
+
+    def test_auxiliary_preference_never_overrides_catalog_modalities(self, monkeypatch, tmp_path):
+        mod = _module()
+        monkeypatch.setattr(mod, "_disk_path", lambda: tmp_path / "catalog.json")
+        preferred = _profile().default_aux_model
+        mod._seed_catalog([
+            {"id": "first-video", "input_modalities": ["text", "image", "video"]},
+            {"id": preferred, "input_modalities": ["text", "image", "video"]},
+        ])
+        assert _profile().default_vision_model() == preferred
+        mod._seed_catalog([
+            {"id": preferred, "input_modalities": ["text", "image"]},
+            {"id": "new-video", "input_modalities": ["text", "image", "video"]},
+        ])
+        assert _profile().default_vision_model() == "new-video"
+
+    def test_cold_media_default_is_cache_only(self, monkeypatch):
+        mod = _module()
+        refreshes = []
+        monkeypatch.setattr(mod, "_warm_catalog_async", lambda: refreshes.append(True))
+        assert _profile().default_vision_model() is None
+        assert refreshes == [True]
+
+    @staticmethod
+    def _assert_routing(monkeypatch):
+        from agent import models_dev
+        from agent.image_routing import decide_image_input_mode
+
+        # Keep models.dev offline, but exercise its actual declaration merge.
+        monkeypatch.setattr(models_dev, "_get_provider_models", lambda *_a, **_k: {})
+        vision = models_dev.get_model_capabilities("friendli", "test/vision", config={})
+        text = models_dev.get_model_capabilities("friendli", "test/text", config={})
+        assert vision is not None and vision.supports_vision is True
+        assert text is not None and text.supports_vision is False
+        assert models_dev.get_model_capabilities("friendli", "test/unknown", config={}) is None
+        assert decide_image_input_mode("friendli", "test/vision", {}) == "native"
+        assert decide_image_input_mode("friendli", "test/text", {}) == "text"
+        assert decide_image_input_mode("friendli", "test/unknown", {}) == "text"
+        assert decide_image_input_mode("friendli", "test/video", {}) == "native"
+        assert decide_image_input_mode("friendli", "test/video-only", {}) == "text"
+        assert decide_image_input_mode("friendli", "test/future", {}) == "text"
+        assert decide_image_input_mode("friendli", "test/vision-extra", {}) == "text"
+        assert decide_image_input_mode(
+            "friendli", "test/text", {"agent": {"image_input_mode": "native"}}
+        ) == "native"
+        assert _profile().supports_vision is False  # Separate tool-result media gate.
+
+    @pytest.mark.parametrize("stale", [False, True])
+    def test_disk_restore_preserves_vision_and_refresh_policy(self, monkeypatch, tmp_path, stale):
+        mod = _module()
+        path = tmp_path / "catalog.json"
+        monkeypatch.setattr(mod, "_disk_path", lambda: path)
+        mod._seed_catalog(self.PAYLOAD)
+        if stale:
+            data = json.loads(path.read_text())
+            data["ts"] = 0
+            path.write_text(json.dumps(data))
+        mod._catalog_cache, mod._disk_checked = None, False
+        _profile().model_capabilities = {}
+        refreshes = []
+        monkeypatch.setattr(mod, "_warm_catalog_async", lambda: refreshes.append(True))
+        assert mod._catalog_cache_only() is not None
+        assert refreshes == ([True] if stale else [])
+        self._assert_routing(monkeypatch)
+
+    def test_legacy_disk_cache_keeps_reasoning_and_requests_modality_refresh(self, monkeypatch, tmp_path):
+        mod = _module()
+        path = tmp_path / "catalog.json"
+        path.write_text(json.dumps({"ts": mod.time.time(), "catalog": CATALOG}))
+        monkeypatch.setattr(mod, "_disk_path", lambda: path)
+        mod._catalog_cache, mod._disk_checked = None, False
+        refreshes = []
+        monkeypatch.setattr(mod, "_warm_catalog_async", lambda: refreshes.append(True))
+        assert mod._catalog_cache_only() == CATALOG
+        assert _profile().model_capabilities == {}
+        assert _profile().supported_reasoning_efforts(EFFORT_MODEL) == ("low", "high", "max")
+        assert refreshes == [True]
+
+    @pytest.mark.parametrize("modalities", [None, "image", {"image": True}, [None, "image"]])
+    def test_missing_or_malformed_modalities_do_not_declare_vision(self, monkeypatch, tmp_path, modalities):
+        mod = _module()
+        monkeypatch.setattr(mod, "_disk_path", lambda: tmp_path / "catalog.json")
+        mod._seed_catalog([{"id": "unknown", "input_modalities": modalities}])
+        assert _profile().model_capabilities == {}
+
+    def test_refresh_replaces_removed_or_changed_models(self, monkeypatch, tmp_path):
+        mod = _module()
+        monkeypatch.setattr(mod, "_disk_path", lambda: tmp_path / "catalog.json")
+        mod._seed_catalog(self.PAYLOAD)
+        mod._seed_catalog([{"id": "test/vision", "input_modalities": ["text"]}])
+        assert _profile().model_capabilities == {"test/vision": {"supports_vision": False}}
+
+    def test_failed_refresh_preserves_last_known_capabilities(self, monkeypatch, tmp_path):
+        mod = _module()
+        monkeypatch.setattr(mod, "_disk_path", lambda: tmp_path / "catalog.json")
+        mod._seed_catalog(self.PAYLOAD)
+        monkeypatch.setattr(mod, "_fetch_catalog_items", lambda **_kwargs: None)
+        assert _profile().fetch_models(api_key="local-test-key") is None
+        self._assert_routing(monkeypatch)
+
+    def test_explicit_user_capability_override_wins(self, monkeypatch, tmp_path):
+        from agent import models_dev
+
+        mod = _module()
+        monkeypatch.setattr(mod, "_disk_path", lambda: tmp_path / "catalog.json")
+        mod._seed_catalog(self.PAYLOAD)
+        monkeypatch.setattr(models_dev, "_get_provider_models", lambda *_a, **_k: {})
+        caps = models_dev.get_model_capabilities(
+            "friendli",
+            "test/vision",
+            config={"model_overrides": {"friendli": {"test/vision": {"supports_vision": False}}}},
+        )
+        assert caps is not None and caps.supports_vision is False

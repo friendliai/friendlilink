@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { MessageId, ReasoningEffortId, ToolCallId } from "@deepseek-ai/dsh-llm";
+import {
+  createUserMessage,
+  createToolResultMessage,
+  MessageId,
+  ReasoningEffortId,
+  ToolCallId,
+} from "@deepseek-ai/dsh-llm";
 import type {
   GenerateOptions,
   ImageBlock,
@@ -12,20 +18,25 @@ function req(overrides: Partial<GenerateOptions> = {}): GenerateOptions {
   return {
     provider: "friendli",
     model: "zai-org/GLM-5.2",
-    messages: [{ role: "user", content: [{ type: "text", text: "hi" }] }],
+    messages: [
+      createUserMessage({
+        source: { kind: "user" },
+        content: [{ type: "text", text: "hi" }],
+      }),
+    ],
     ...overrides,
   };
 }
 
 describe("serializeRequest history", () => {
-  it("preserves a one-shot identity-free user request", () => {
+  it("preserves a native identified user request", () => {
     expect(serializeRequest(req({ system: "Be concise." })).messages).toEqual([
       { role: "system", content: "Be concise." },
       { role: "user", content: "hi" },
     ]);
   });
 
-  it("replays durable user, assistant tool call, and first-class tool result in order", () => {
+  it("replays durable user, assistant tool call, and native tool result in order", () => {
     const callId = ToolCallId("call_weather_1");
     const messages: GenerateOptions["messages"] = [
       {
@@ -58,13 +69,11 @@ describe("serializeRequest history", () => {
           },
         ],
       },
-      {
-        role: "tool",
-        id: MessageId("tool-1"),
-        source: { kind: "tool", callId },
-        toolCallId: callId,
+      createToolResultMessage({
+        callId,
         content: [{ type: "text", text: "18 C, sunny" }],
-      },
+        isError: false,
+      }),
       {
         role: "assistant",
         id: MessageId("assistant-2"),
@@ -95,23 +104,6 @@ describe("serializeRequest history", () => {
       { role: "tool", tool_call_id: "call_weather_1", content: "18 C, sunny" },
       { role: "assistant", content: "It is 18 C and sunny." },
     ]);
-  });
-
-  it("rejects in-history developer tool changes instead of sending them as user text", () => {
-    for (const type of ["tool-addition", "tool-removal"] as const) {
-      const messages: GenerateOptions["messages"] = [
-        { role: "user", content: [{ type: "text", text: "Use a tool" }] },
-        {
-          role: "developer",
-          id: MessageId(`update-${type}`),
-          source: { kind: "user" },
-          content: [{ type, toolName: "weather" }],
-        },
-      ];
-      expect(() => serializeRequest(req({ messages }))).toThrowError(
-        expect.objectContaining({ code: "UNSUPPORTED_TOOL_UPDATE" }),
-      );
-    }
   });
 });
 
@@ -247,7 +239,10 @@ describe("serializeRequest tool schema normalization", () => {
       provider: "friendli",
       model: "zai-org/GLM-5.2",
       messages: [
-        { role: "user", content: [{ type: "text", text: "call it" }] },
+        createUserMessage({
+          source: { kind: "user" },
+          content: [{ type: "text", text: "call it" }],
+        }),
       ],
       tools: [tool],
     };

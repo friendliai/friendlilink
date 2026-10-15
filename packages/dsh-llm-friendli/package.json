@@ -1,7 +1,7 @@
 {
   "name": "@friendliai/dsh-llm-friendli",
-  "version": "0.2.0",
-  "description": "FriendliAI serverless LLM adapter for DeepSeek Harness \u2014 OpenAI-compatible chat completions with dynamic model discovery and reasoning support",
+  "version": "0.2.1",
+  "description": "FriendliAI serverless LLM adapter for DeepSeek Harness — OpenAI-compatible chat completions with dynamic model discovery and reasoning support",
   "keywords": [
     "deepseek-harness",
     "dsh-plugin",
@@ -44,20 +44,22 @@
     "prepare": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit -p tsconfig.build.json",
     "test": "vitest run --exclude '**/*.live.test.ts'",
-    "test:e2e": "vitest run tests/e2e.live.test.ts",
+    "test:e2e": "vitest run tests/e2e.live.test.ts tests/native-protocol.live.test.ts",
     "lint:all": "tsc --noEmit -p tsconfig.build.json && vitest run --exclude '**/*.live.test.ts'"
   },
   "dependencies": {
     "eventsource-parser": "^4.1.0"
   },
   "peerDependencies": {
-    "@deepseek-ai/cordis": "~4.0.4",
-    "@deepseek-ai/dsh-llm": "^0.2.0-rc.2",
+    "@deepseek-ai/cordis": "~4.0.4 || ~4.0.5-alpha.2",
+    "@deepseek-ai/dsh-llm": "^0.1.2-rc.1 || ^0.2.0-rc.2 || ^0.2.1-alpha.3",
     "@deepseek-ai/schemastery": "^3.18.0"
   },
   "devDependencies": {
-    "@deepseek-ai/cordis": "~4.0.4",
-    "@deepseek-ai/dsh-llm": "^0.2.0-rc.2",
+    "@deepseek-ai/cordis": "~4.0.5-alpha.2",
+    "@deepseek-ai/dsh-llm": "^0.2.1-alpha.3",
+    "@deepseek-ai/dsh-llm-legacy": "npm:@deepseek-ai/dsh-llm@0.1.2-rc.1",
+    "@deepseek-ai/dsh-llm-next": "npm:@deepseek-ai/dsh-llm@0.2.0-rc.2",
     "@deepseek-ai/schemastery": "^3.18.0",
     "@types/node": "^26.2.0",
     "typescript": "^7.0.2",

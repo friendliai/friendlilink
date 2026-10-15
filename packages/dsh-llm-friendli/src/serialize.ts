@@ -14,7 +14,6 @@ import type {
   AssistantMessage,
   ContentBlock,
   GenerateOptions,
-  RequestMessage,
 } from "@deepseek-ai/dsh-llm";
 import type {
   WireContentPart,
@@ -22,6 +21,25 @@ import type {
   WireRequest,
   WireTool,
 } from "./types.ts";
+
+/** Native 0.1.2 results predate the first-class tool role in 0.2.x. */
+export interface LegacyToolResultBlock {
+  type: "tool-result";
+  toolCallId: string;
+  content: readonly RequestContentBlock[];
+  isError?: boolean;
+}
+
+export type RequestContentBlock = ContentBlock | LegacyToolResultBlock;
+
+/** The old request shape is retained only at the protocol boundary. */
+interface LegacyRequestMessage {
+  role: "system" | "user" | "assistant";
+  content: readonly RequestContentBlock[];
+}
+
+export type CompatibleRequestMessage =
+  GenerateOptions["messages"][number] | LegacyRequestMessage;
 
 /**
  * Normalize an upstream JSON Schema for Friendli: its validator rejects any
@@ -71,8 +89,8 @@ export interface RequestDefaults {
 
 /** Keep text-only requests compact; interleave image parts in their original order. */
 function userContent(
-  blocks: readonly ContentBlock[],
-  imageUrls?: ReadonlyMap<ContentBlock, string>,
+  blocks: readonly RequestContentBlock[],
+  imageUrls?: ReadonlyMap<RequestContentBlock, string>,
 ): string | WireContentPart[] {
   let text = "";
   let parts: WireContentPart[] | undefined;
@@ -89,6 +107,15 @@ function userContent(
       if (text) parts.push({ type: "text", text });
       text = "";
       parts.push({ type: "image_url", image_url: { url } });
+    } else if (block.type === "tool-result") {
+      const nested = userContent(block.content, imageUrls);
+      if (typeof nested === "string") text += nested;
+      else {
+        parts ??= [];
+        if (text) parts.push({ type: "text", text });
+        text = "";
+        parts.push(...nested);
+      }
     } else {
       throw new LlmError(
         `The Friendli chat-completions adapter cannot serialize ${block.type} in text content.`,
@@ -102,7 +129,9 @@ function userContent(
 }
 
 /** Serialize one assistant message (text + reasoning + tool calls). */
-function serializeAssistant(message: AssistantMessage): WireMessage {
+function serializeAssistant(
+  message: Pick<AssistantMessage, "content"> | LegacyRequestMessage,
+): WireMessage {
   let text = "";
   let reasoning = "";
   const toolCalls: NonNullable<
@@ -137,17 +166,53 @@ function serializeAssistant(message: AssistantMessage): WireMessage {
 }
 
 /**
- * Serialize ordered request history, including one-shot user inputs and
- * first-class tool-role results. This route does not advertise in-history tool
- * updates; developer messages must not be turned into user instructions.
+ * Serialize both native user-role result wrappers (0.1.2) and first-class
+ * tool-role messages (0.2.x). Tool images follow the complete result batch in
+ * a user message, since the OpenAI tool role accepts text, not image parts.
  * @param messages - the harness request history, in order.
  * @returns the wire messages; order preserved.
  */
 export function serializeMessages(
-  messages: readonly RequestMessage[],
-  imageUrls?: ReadonlyMap<ContentBlock, string>,
+  messages: readonly CompatibleRequestMessage[],
+  imageUrls?: ReadonlyMap<RequestContentBlock, string>,
 ): WireMessage[] {
   const wire: WireMessage[] = [];
+  let toolImages: WireContentPart[] = [];
+  const flushToolImages = (): void => {
+    if (toolImages.length === 0) return;
+    wire.push({
+      role: "user",
+      content: [
+        {
+          type: "text",
+          text: "Images returned by the preceding tool results:",
+        },
+        ...toolImages,
+      ],
+    });
+    toolImages = [];
+  };
+  const appendResult = (
+    callId: string,
+    blocks: readonly RequestContentBlock[],
+    isError?: boolean,
+  ): void => {
+    const content = userContent(blocks, imageUrls);
+    let text = "";
+    if (typeof content === "string") text = content;
+    else
+      for (const part of content) {
+        if (part.type === "text") text += part.text;
+        else toolImages.push(part);
+      }
+    wire.push({
+      role: "tool",
+      tool_call_id: callId,
+      content: isError
+        ? `Error: ${text || "(no output)"}`
+        : text || "(no output)",
+    });
+  };
   for (const message of messages) {
     if (message.role === "developer") {
       throw new LlmError(
@@ -155,21 +220,30 @@ export function serializeMessages(
         "UNSUPPORTED_TOOL_UPDATE",
       );
     }
+    if (message.role === "tool") {
+      appendResult(message.toolCallId, message.content, message.isError);
+      continue;
+    }
     if (message.role === "assistant") {
+      flushToolImages();
       wire.push(serializeAssistant(message));
-    } else if (message.role === "tool") {
-      wire.push({
-        role: "tool",
-        tool_call_id: message.toolCallId,
-        content: userContent(message.content, imageUrls),
-      });
-    } else {
+      continue;
+    }
+    const blocks: readonly RequestContentBlock[] = message.content;
+    const regular = blocks.filter((block) => block.type !== "tool-result");
+    const results = blocks.filter((block) => block.type === "tool-result");
+    if (regular.length > 0 || results.length === 0) {
+      flushToolImages();
       wire.push({
         role: message.role,
-        content: userContent(message.content, imageUrls),
+        content: userContent(regular, imageUrls),
       });
     }
+    for (const result of results) {
+      appendResult(result.toolCallId, result.content, result.isError);
+    }
   }
+  flushToolImages();
   return wire;
 }
 
@@ -240,7 +314,7 @@ function resolveReasoning(
 export function serializeRequest(
   options: GenerateOptions,
   defaults: RequestDefaults = {},
-  imageUrls?: ReadonlyMap<ContentBlock, string>,
+  imageUrls?: ReadonlyMap<RequestContentBlock, string>,
 ): WireRequest {
   const messages: WireMessage[] = [];
   if (options.system !== undefined) {
