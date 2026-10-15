@@ -66,6 +66,9 @@ jobs:
       - name: Install ${{ matrix.name }} ${{ matrix.to }} and run unit tests
         id: unit
         run: bash scripts/upstream-check/install-and-test.sh ${{ matrix.name }} ${{ matrix.to }}
+      - name: Install local modality fixture generator
+        if: steps.unit.outcome == 'success' && env.HAS_E2E_KEY == 'true'
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
       - name: e2e (${{ matrix.name }})
         id: e2e
         if: steps.unit.outcome == 'success' && env.HAS_E2E_KEY == 'true'
