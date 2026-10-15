@@ -226,7 +226,9 @@ export class FriendliAdapter extends LlmAdapter {
         : AbortSignal.any([options.signal, consumer.signal]);
 
     let imageUrls: Map<RequestContentBlock, string> | undefined;
-    const resolveImages = async (blocks: readonly RequestContentBlock[]): Promise<void> => {
+    const resolveImages = async (
+      blocks: readonly RequestContentBlock[],
+    ): Promise<void> => {
       for (const block of blocks) {
         if (block.type === "tool-result") {
           await resolveImages(block.content);

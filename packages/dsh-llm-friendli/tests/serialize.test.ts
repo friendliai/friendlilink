@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { createUserMessage, createToolResultMessage, MessageId, ReasoningEffortId, ToolCallId } from "@deepseek-ai/dsh-llm";
+import {
+  createUserMessage,
+  createToolResultMessage,
+  MessageId,
+  ReasoningEffortId,
+  ToolCallId,
+} from "@deepseek-ai/dsh-llm";
 import type {
   GenerateOptions,
   ImageBlock,
@@ -12,7 +18,12 @@ function req(overrides: Partial<GenerateOptions> = {}): GenerateOptions {
   return {
     provider: "friendli",
     model: "zai-org/GLM-5.2",
-    messages: [createUserMessage({ source: { kind: "user" }, content: [{ type: "text", text: "hi" }] })],
+    messages: [
+      createUserMessage({
+        source: { kind: "user" },
+        content: [{ type: "text", text: "hi" }],
+      }),
+    ],
     ...overrides,
   };
 }
@@ -94,7 +105,6 @@ describe("serializeRequest history", () => {
       { role: "assistant", content: "It is 18 C and sunny." },
     ]);
   });
-
 });
 
 describe("serializeRequest images", () => {
@@ -229,7 +239,10 @@ describe("serializeRequest tool schema normalization", () => {
       provider: "friendli",
       model: "zai-org/GLM-5.2",
       messages: [
-        createUserMessage({ source: { kind: "user" }, content: [{ type: "text", text: "call it" }] }),
+        createUserMessage({
+          source: { kind: "user" },
+          content: [{ type: "text", text: "call it" }],
+        }),
       ],
       tools: [tool],
     };

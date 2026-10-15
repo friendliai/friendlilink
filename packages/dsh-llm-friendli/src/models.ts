@@ -88,10 +88,14 @@ export function normalizeModel(
   const contextWindow = positiveInt(entry.context_length);
   const maxTokens = positiveInt(entry.max_completion_tokens);
   const inputModalities = Array.isArray(entry.input_modalities)
-    ? [...new Set(entry.input_modalities.filter(
-        (modality): modality is string =>
-          typeof modality === "string" && modality.length > 0,
-      ))]
+    ? [
+        ...new Set(
+          entry.input_modalities.filter(
+            (modality): modality is string =>
+              typeof modality === "string" && modality.length > 0,
+          ),
+        ),
+      ]
     : ["text"];
   return {
     id,

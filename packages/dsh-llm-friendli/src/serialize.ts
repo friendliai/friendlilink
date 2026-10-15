@@ -39,8 +39,7 @@ interface LegacyRequestMessage {
 }
 
 export type CompatibleRequestMessage =
-  | GenerateOptions["messages"][number]
-  | LegacyRequestMessage;
+  GenerateOptions["messages"][number] | LegacyRequestMessage;
 
 /**
  * Normalize an upstream JSON Schema for Friendli: its validator rejects any
@@ -130,7 +129,9 @@ function userContent(
 }
 
 /** Serialize one assistant message (text + reasoning + tool calls). */
-function serializeAssistant(message: Pick<AssistantMessage, "content"> | LegacyRequestMessage): WireMessage {
+function serializeAssistant(
+  message: Pick<AssistantMessage, "content"> | LegacyRequestMessage,
+): WireMessage {
   let text = "";
   let reasoning = "";
   const toolCalls: NonNullable<
@@ -182,7 +183,10 @@ export function serializeMessages(
     wire.push({
       role: "user",
       content: [
-        { type: "text", text: "Images returned by the preceding tool results:" },
+        {
+          type: "text",
+          text: "Images returned by the preceding tool results:",
+        },
         ...toolImages,
       ],
     });
@@ -196,14 +200,17 @@ export function serializeMessages(
     const content = userContent(blocks, imageUrls);
     let text = "";
     if (typeof content === "string") text = content;
-    else for (const part of content) {
-      if (part.type === "text") text += part.text;
-      else toolImages.push(part);
-    }
+    else
+      for (const part of content) {
+        if (part.type === "text") text += part.text;
+        else toolImages.push(part);
+      }
     wire.push({
       role: "tool",
       tool_call_id: callId,
-      content: isError ? `Error: ${text || "(no output)"}` : text || "(no output)",
+      content: isError
+        ? `Error: ${text || "(no output)"}`
+        : text || "(no output)",
     });
   };
   for (const message of messages) {
@@ -227,7 +234,10 @@ export function serializeMessages(
     const results = blocks.filter((block) => block.type === "tool-result");
     if (regular.length > 0 || results.length === 0) {
       flushToolImages();
-      wire.push({ role: message.role, content: userContent(regular, imageUrls) });
+      wire.push({
+        role: message.role,
+        content: userContent(regular, imageUrls),
+      });
     }
     for (const result of results) {
       appendResult(result.toolCallId, result.content, result.isError);

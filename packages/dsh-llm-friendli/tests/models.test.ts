@@ -47,10 +47,12 @@ describe("normalizeModel", () => {
   });
 
   it("keeps provider-only modalities and validates catalog values without inventing text", () => {
-    expect(normalizeModel({
-      id: "future",
-      input_modalities: ["video", null, "audio", "video", "", 4],
-    })?.inputModalities).toEqual(["video", "audio"]);
+    expect(
+      normalizeModel({
+        id: "future",
+        input_modalities: ["video", null, "audio", "video", "", 4],
+      })?.inputModalities,
+    ).toEqual(["video", "audio"]);
   });
 
   it("drops a deprecated entry", () => {
