@@ -66,16 +66,18 @@ jobs:
       - name: Install ${{ matrix.name }} ${{ matrix.to }} and run unit tests
         id: unit
         run: bash scripts/upstream-check/install-and-test.sh ${{ matrix.name }} ${{ matrix.to }}
-      - name: Install local modality fixture generator
-        if: steps.unit.outcome == 'success' && env.HAS_E2E_KEY == 'true'
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg
       - name: e2e (${{ matrix.name }})
         id: e2e
         if: steps.unit.outcome == 'success' && env.HAS_E2E_KEY == 'true'
         env:
           FRIENDLIAI_API_KEY: ${{ secrets.FRIENDLIAI_API_KEY }}
         shell: bash # pipefail, so tee does not mask the e2e exit code
-        run: bash scripts/upstream-check/e2e.sh ${{ matrix.name }} ${{ matrix.to }} 2>&1 | sed "s|$FRIENDLIAI_API_KEY|***|g" | tee "$RUNNER_TEMP/e2e.log"
+        run: |
+          {
+            sudo apt-get update
+            sudo apt-get install -y ffmpeg
+            bash scripts/upstream-check/e2e.sh ${{ matrix.name }} ${{ matrix.to }}
+          } 2>&1 | sed "s|$FRIENDLIAI_API_KEY|***|g" | tee "$RUNNER_TEMP/e2e.log"
       - name: Keep e2e failure log for the Slack report
         if: failure() && steps.e2e.outcome == 'failure'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
