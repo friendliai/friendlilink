@@ -38,7 +38,7 @@ install_dsh()      { npm install -g "@deepseek-ai/dsh-llm@$to"; }
 # the `hermes-agent` npm package is an unofficial third-party bridge).
 # The installer always fetches latest, so verify it matches $to afterwards.
 install_hermes()   {
-  curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash >/dev/null
+  curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash -s -- --non-interactive >/dev/null
   export PATH="$HOME/.hermes/bin:$PATH"
   local got
   got="$(hermes --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)"

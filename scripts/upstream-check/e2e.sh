@@ -69,7 +69,7 @@ case "$name" in
   codex)    npm install -g "@openai/codex@$to" ;;
   opencode) npm install -g "opencode-ai@$to" ;;
   pi)       npm install -g "@earendil-works/pi-coding-agent@$to" ;;
-  hermes)   curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash
+  hermes)   curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash -s -- --non-interactive
             # the installer always fetches latest: make sure that is the version under test
             [[ "$(hermes --version | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)" == "$to" ]] ;;
   dsh)      npm install -g "@deepseek-ai/dsh-llm@$to" pnpm ;;
@@ -94,8 +94,11 @@ profile=()
 while read -r modality model level <&3; do
   case "$modality:$name" in
     text:*|image:claude|image:codex|image:opencode|image:pi|image:hermes) ;;
-    video:opencode) ;;
-    *) echo "e2e: $modality skipped: $name has no native attachment transport"; continue ;;
+    video:hermes) ;;
+    video:opencode)
+      echo "e2e: video skipped: opencode run --file rejects MP4 as a binary file (upstream CLI limitation)"
+      continue ;;
+    *) echo "e2e: $modality skipped: $name has no tested native input path"; continue ;;
   esac
   echo "e2e: $modality: $model, reasoning $level"
   node "$modalities" fixture "$modality"
@@ -123,7 +126,6 @@ while read -r modality model level <&3; do
       export OPENCODE_CONFIG_CONTENT='{"provider":{"friendli":{"options":{"baseURL":"'"$proxy"'/v1"}}}}'
       [[ "$level" == default ]] || effort=(--variant "$level")
       [[ "$modality" == image ]] && attachment=(--file "$HOME/input.png")
-      [[ "$modality" == video ]] && attachment=(--file "$HOME/input.mp4")
       out="$(opencode run ${effort[@]+"${effort[@]}"} --title e2e "$prompt" ${attachment[@]+"${attachment[@]}"})" ;;
     pi)
       frlink pi on --model "$model" --base-url "$proxy"
@@ -135,6 +137,16 @@ while read -r modality model level <&3; do
       hermes config set model.base_url "$proxy/v1"
       [[ "$level" == default ]] || effort=(--reasoning "${level/off/none}")
       [[ "$modality" == image ]] && attachment=(--image "$HOME/input.png")
+      if [[ "$modality" == video ]]; then
+        # video_analyze uses the auxiliary vision route, not chat --image.
+        # Pin it to the same model and relay so fallback cannot fake coverage.
+        hermes config set auxiliary.vision.provider friendli
+        hermes config set auxiliary.vision.base_url "$proxy/v1"
+        hermes config set auxiliary.vision.model "$model"
+        [[ "$level" == default ]] || hermes config set auxiliary.vision.reasoning_effort "${level/off/none}"
+        attachment=(--toolsets video)
+        prompt="Use video_analyze exactly once with video_url \"$HOME/input.mp4\" and question \"Describe this video briefly.\" Then reply briefly. Do not use any other tools."
+      fi
       out="$(hermes chat -Q ${effort[@]+"${effort[@]}"} ${attachment[@]+"${attachment[@]}"} -q "$prompt")" ;;
     dsh)
       frlink dsh on "${profile[@]}" --model "$model"
