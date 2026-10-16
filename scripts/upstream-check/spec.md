@@ -54,14 +54,14 @@ The pull-request `ci` workflow uses the same isolation: its `frlink (pnpm)` job 
 
 This is live inference E2E coverage, not a claim about every upstream UI, API, tool, or provider. Only changed harnesses run; a unit failure or missing API key skips that harness's entire E2E step. Cases are generated only for active modalities in Friendli's live catalog, with one cheapest model per modality.
 
-| Harness | Text | Image | Video |
-| --- | --- | --- | --- |
-| Claude Code | Direct prompt | stream-json image block | Skipped: no native video block in the tested input contract |
-| Codex | `exec` prompt | `exec --image` | Skipped: no native video input in the tested exec path |
-| OpenCode | `run` prompt | `run --file` | Skipped: local MP4 rejected by the upstream CLI |
-| Pi | `-p` prompt | `@input.png` | Skipped: non-image `@file` inputs are read as text, not native video |
-| Hermes | `chat -q` | `chat --image` | `video_analyze` tool → auxiliary Friendli request with `video_url` |
-| dsh | Headless task | Skipped: no direct attachment CLI; `read_image` flow is outside this runner | Skipped: no native video content path in the upstream protocol/adapter |
+| Harness     | Text          | Image                                                                       | Video                                                                  |
+| ----------- | ------------- | --------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| Claude Code | Direct prompt | stream-json image block                                                     | Skipped: no native video block in the tested input contract            |
+| Codex       | `exec` prompt | `exec --image`                                                              | Skipped: no native video input in the tested exec path                 |
+| OpenCode    | `run` prompt  | `run --file`                                                                | Skipped: local MP4 rejected by the upstream CLI                        |
+| Pi          | `-p` prompt   | `@input.png`                                                                | Skipped: non-image `@file` inputs are read as text, not native video   |
+| Hermes      | `chat -q`     | `chat --image`                                                              | `video_analyze` tool → auxiliary Friendli request with `video_url`     |
+| dsh         | Headless task | Skipped: no direct attachment CLI; `read_image` flow is outside this runner | Skipped: no native video content path in the upstream protocol/adapter |
 
 OpenCode 1.19.1's local `run --file input.mp4` failed with `Cannot read binary file` before reaching Friendli in [run 38840006060](https://github.com/friendliai/friendlilink/actions/runs/38840006060). The runner explicitly reports that upstream CLI limitation instead of attempting an unsupported attachment. This is a skip, not a video pass. Re-enabling the case requires a working native video transport through both the CLI and its OpenAI-compatible SDK; declaring video in model metadata alone is insufficient.
 
