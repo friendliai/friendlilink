@@ -73,13 +73,20 @@ function buildPayload() {
   const logDir = process.env.E2E_LOG_DIR;
   const failures =
     logDir && existsSync(logDir)
-      ? readdirSync(logDir).map(
-          (entry) =>
-            `*${entry.replace(/^e2e-log-/, "")}* e2e log\n\`\`\`${readFileSync(
-              join(logDir, entry, "e2e.log"),
-              "utf8",
-            ).slice(-3000)}\`\`\``,
-        )
+      ? readdirSync(logDir)
+          // Reruns retain artifacts from earlier attempts; ignore recovered legs.
+          .filter((entry) =>
+            results.some(
+              (r) => entry === `e2e-log-${r.name}` && r.e2e === "fail",
+            ),
+          )
+          .map(
+            (entry) =>
+              `*${entry.replace(/^e2e-log-/, "")}* e2e log\n\`\`\`${readFileSync(
+                join(logDir, entry, "e2e.log"),
+                "utf8",
+              ).slice(-3000)}\`\`\``,
+          )
       : [];
   return {
     text: `:arrow_up: *Upstream update* — ${new Date().toISOString().slice(0, 10)}\n${[...lines, ...failures].join("\n")}`,
