@@ -9,6 +9,10 @@
 
 set -euo pipefail
 
+# Teardown scans /proc and needs bash 4 (BASHPID, mapfile).
+[[ $OSTYPE != linux* || ${BASH_VERSINFO[0]} -lt 4 ]] &&
+  { echo "e2e: needs Linux and bash 4+ (got $OSTYPE, bash $BASH_VERSION)" >&2; exit 2; }
+
 name="${1:-}" to="${2:-}"
 [[ -z "$name" || -z "$to" ]] && { echo "usage: e2e.sh <name> <to>"; exit 2; }
 case "$name" in claude|codex|opencode|pi|hermes|dsh) ;; *) echo "unknown harness: $name"; exit 2 ;; esac
@@ -23,10 +27,22 @@ if [[ -z "${E2E_CLEAN:-}" ]]; then
 fi
 relay="$(cd "$(dirname "$0")/.." && pwd)/friendli-relay.mjs"
 modalities="$(cd "$(dirname "$0")" && pwd)/modalities.mjs"
+# Live processes other than this shell whose /proc environ carries this HOME,
+# such as harness daemons detached into their own session. Best effort: misses
+# processes exec'd with another HOME and those whose environ is unreadable.
+home_pids() {
+  local pid all
+  all="$(grep -lzxF "HOME=$HOME" /proc/[0-9]*/environ 2>/dev/null | cut -d/ -f3)"
+  for pid in $all; do
+    [[ $pid != "$$" && $pid != "$BASHPID" ]] && kill -0 "$pid" 2>/dev/null && echo "$pid"
+  done
+}
 # On failure, say what Friendli answered: every 4xx/5xx, plus requests the relay
-# could not forward at all (those never reach capture.jsonl).
+# could not forward at all (those never reach capture.jsonl). Teardown is
+# best-effort: it never changes the run's exit code.
 cleanup() {
-  local rc=$?
+  local rc=$? pids
+  set +e
   if [[ $rc != 0 && -f capture.jsonl ]]; then
     node -e '
 for (const l of require("fs").readFileSync("capture.jsonl", "utf8").trim().split("\n").map(JSON.parse))
@@ -36,7 +52,16 @@ for (const l of require("fs").readFileSync("capture.jsonl", "utf8").trim().split
   fi
   [[ $rc == 0 ]] || grep "upstream error" relay.log 2>/dev/null || true
   kill "${relay_pid:-}" 2>/dev/null || true
+  # A leftover daemon keeps writing HOME, so rm fails with "Directory not empty":
+  # hermes >= 0.22.3 `chat` auto-starts `gateway run --idle-exit`, which by
+  # default exits only after 10 idle minutes.
+  mapfile -t pids <<< "$(home_pids)"
+  kill "${pids[@]}" 2>/dev/null
+  for _ in {1..50}; do [[ -z $(home_pids) ]] && break; sleep 0.2; done
+  mapfile -t pids <<< "$(home_pids)"
+  kill -9 "${pids[@]}" 2>/dev/null
   rm -rf "$HOME"
+  exit "$rc"
 }
 trap cleanup EXIT
 cd "$HOME"
