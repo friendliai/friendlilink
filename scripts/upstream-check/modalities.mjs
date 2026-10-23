@@ -1,6 +1,6 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
-import { crc32, deflateSync } from "node:zlib";
+import { deflateSync } from "node:zlib";
 
 const [command, ...args] = process.argv.slice(2);
 
@@ -40,6 +40,16 @@ if (command === "plan") {
   if (modality === "image") {
     // A locally generated 32x32 red PNG; no network assets, checked-in binaries,
     // or ffmpeg (only the Hermes video case needs it).
+    const crc32 = (data) => {
+      let crc = 0xffffffff;
+      for (const byte of data) {
+        crc ^= byte;
+        for (let bit = 0; bit < 8; bit++) {
+          crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0);
+        }
+      }
+      return (crc ^ 0xffffffff) >>> 0;
+    };
     const chunk = (type, data) => {
       const body = Buffer.concat([Buffer.from(type), data]);
       const out = Buffer.alloc(8);
