@@ -22,7 +22,7 @@ if [[ -z "${E2E_CLEAN:-}" ]]; then
   : "${FRIENDLIAI_API_KEY:?FRIENDLIAI_API_KEY is required}"
   exec env -i E2E_CLEAN=1 HOME="$(mktemp -d)" TERM=dumb \
     PATH="$(dirname "$(command -v node)"):/usr/local/bin:/usr/bin:/bin" \
-    FFMPEG_BINARY="$(command -v ffmpeg)" \
+    CI="${CI:-}" FFMPEG_BINARY="$(command -v ffmpeg)" \
     FRIENDLIAI_API_KEY="$FRIENDLIAI_API_KEY" bash "$0" "$@"
 fi
 relay="$(cd "$(dirname "$0")/.." && pwd)/friendli-relay.mjs"
@@ -126,6 +126,11 @@ while read -r modality model level <&3; do
     *) echo "e2e: $modality skipped: $name has no tested native input path"; continue ;;
   esac
   echo "e2e: $modality: $model, reasoning $level"
+  # Only the video fixture needs ffmpeg; CI installs it on first use.
+  if [[ $modality == video && -z $FFMPEG_BINARY && -n $CI ]]; then
+    sudo apt-get update -q && sudo apt-get install -y -q ffmpeg
+    FFMPEG_BINARY="$(command -v ffmpeg)"
+  fi
   node "$modalities" fixture "$modality"
   # No previous session's request may satisfy this case.
   : > capture.jsonl
