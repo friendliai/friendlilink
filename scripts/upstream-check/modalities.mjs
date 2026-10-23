@@ -1,5 +1,6 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
+import { crc32, deflateSync } from "node:zlib";
 
 const [command, ...args] = process.argv.slice(2);
 
@@ -37,26 +38,29 @@ if (command === "plan") {
 } else if (command === "fixture") {
   const [modality] = args;
   if (modality === "image") {
-    // A locally generated 32x32 PNG; no network assets or checked-in binaries.
-    const result = spawnSync(
-      process.env.FFMPEG_BINARY || "ffmpeg",
-      [
-        "-hide_banner",
-        "-loglevel",
-        "error",
-        "-f",
-        "lavfi",
-        "-i",
-        "color=c=red:s=32x32",
-        "-frames:v",
-        "1",
-        "-y",
-        "input.png",
-      ],
-      { stdio: "inherit" },
+    // A locally generated 32x32 red PNG; no network assets, checked-in binaries,
+    // or ffmpeg (only the Hermes video case needs it).
+    const chunk = (type, data) => {
+      const body = Buffer.concat([Buffer.from(type), data]);
+      const out = Buffer.alloc(8);
+      out.writeUInt32BE(data.length, 0);
+      out.writeUInt32BE(crc32(body), 4);
+      return Buffer.concat([out.subarray(0, 4), body, out.subarray(4)]);
+    };
+    const header = Buffer.alloc(13);
+    header.writeUInt32BE(32, 0);
+    header.writeUInt32BE(32, 4);
+    header.set([8, 2, 0, 0, 0], 8); // 8-bit RGB, no interlace
+    const row = Buffer.from([0, ...Array(32).fill([255, 0, 0]).flat()]);
+    writeFileSync(
+      "input.png",
+      Buffer.concat([
+        Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+        chunk("IHDR", header),
+        chunk("IDAT", deflateSync(Buffer.concat(Array(32).fill(row)))),
+        chunk("IEND", Buffer.alloc(0)),
+      ]),
     );
-    if (result.error) throw result.error;
-    if (result.status !== 0) process.exit(result.status ?? 1);
     writeFileSync(
       "image.jsonl",
       JSON.stringify({

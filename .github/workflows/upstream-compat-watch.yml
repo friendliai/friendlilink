@@ -74,8 +74,6 @@ jobs:
         shell: bash # pipefail, so tee does not mask the e2e exit code
         run: |
           {
-            sudo apt-get update
-            sudo apt-get install -y ffmpeg
             bash scripts/upstream-check/e2e.sh ${{ matrix.name }} ${{ matrix.to }}
           } 2>&1 | sed "s|$FRIENDLIAI_API_KEY|***|g" | tee "$RUNNER_TEMP/e2e.log"
       - name: Keep e2e failure log for the Slack report
