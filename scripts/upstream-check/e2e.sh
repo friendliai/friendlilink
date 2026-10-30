@@ -74,7 +74,8 @@ unset FRIENDLIAI_API_KEY
 # Cheapest active model per live input modality.
 models_url=https://api.friendli.ai/serverless/v1/models
 echo "e2e: fetching model catalog: GET $models_url" >&2
-if http_status="$(curl -fsS -o models.json -w '%{http_code}' "$models_url")"; then
+# --retry covers 408/429/5xx and timeouts with 1,2,4,8,16s backoff.
+if http_status="$(curl -fsS --retry 5 -o models.json -w '%{http_code}' "$models_url")"; then
   :
 else
   rc=$?
@@ -109,7 +110,7 @@ frlink check status | grep "^  $name (.*): not routed"
 frlink login --api-key "$key"
 
 proxy=http://127.0.0.1:8787
-node "$relay" --port 8787 --log capture.jsonl --bodies 1000000 --quiet 2>relay.log &
+node "$relay" --port 8787 --log capture.jsonl --bodies 1000000 --quiet --retry-429 60 2>relay.log &
 relay_pid=$!
 until curl -s -o /dev/null "$proxy"; do kill -0 "$relay_pid"; sleep 0.2; done
 
