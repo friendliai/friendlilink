@@ -26,11 +26,10 @@ it.each([
     await new Promise<void>((r) => upstream.listen(0, "127.0.0.1", r));
     const target = `http://127.0.0.1:${(upstream.address() as AddressInfo).port}`;
     const dir = mkdtempSync(join(tmpdir(), "relay-"));
-    const port = 20000 + Math.floor(Math.random() * 20000);
     const child = spawn(process.execPath, [
       relay,
       "--port",
-      String(port),
+      "0",
       "--target",
       target,
       "--log",
@@ -39,7 +38,16 @@ it.each([
       ...flags,
     ]);
     try {
-      await new Promise((r) => child.stderr.once("data", r));
+      // The banner carries the port the OS picked; exiting first is a failure.
+      const port = await new Promise<string>((resolve, reject) => {
+        let stderr = "";
+        child.stderr.on("data", (chunk) => {
+          stderr += chunk;
+          const bound = /localhost:(\d+)/.exec(stderr);
+          if (bound) resolve(bound[1]);
+        });
+        child.once("exit", () => reject(new Error(stderr)));
+      });
       const res = await fetch(`http://127.0.0.1:${port}/v1/chat/completions`, {
         method: "POST",
         body: "{}",

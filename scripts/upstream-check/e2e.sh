@@ -174,6 +174,8 @@ while read -r modality model level <&3; do
         hermes config set auxiliary.vision.provider friendli
         hermes config set auxiliary.vision.base_url "$proxy/v1"
         hermes config set auxiliary.vision.model "$model"
+        # 180s default + up to 3 relay --retry-429 holds of 60s.
+        hermes config set auxiliary.vision.timeout 360
         [[ "$level" == default ]] || hermes config set auxiliary.vision.reasoning_effort "${level/off/none}"
         attachment=(--toolsets video)
         prompt="Use video_analyze exactly once with video_url \"$HOME/input.mp4\" and question \"Describe this video briefly.\" Then reply briefly. Do not use any other tools."

@@ -303,7 +303,7 @@ async function main() {
 
   server.listen(options.port, () => {
     console.error(
-      `friendli-relay: http://localhost:${options.port} → ${options.target}`,
+      `friendli-relay: http://localhost:${server.address().port} → ${options.target}`,
     );
     console.error(`friendli-relay: capture → ${options.log}`);
   });
