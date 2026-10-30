@@ -53,8 +53,12 @@ function parseArgs(argv) {
     else if (flag === "--log") options.log = value();
     else if (flag === "--bodies") options.bodies = Number(value());
     else if (flag === "--quiet") options.quiet = true;
-    else if (flag === "--retry-429") options.retry429 = Number(value());
-    else throw new Error(`unknown flag: ${flag}`);
+    else if (flag === "--retry-429") {
+      options.retry429 = Number(value());
+      // NaN or past setTimeout's 2^31-1 ms would fire after 1 ms instead.
+      if (!(options.retry429 >= 0 && options.retry429 <= 2147483))
+        throw new Error(`${flag} needs seconds in [0, 2147483]`);
+    } else throw new Error(`unknown flag: ${flag}`);
   }
   return options;
 }

@@ -74,8 +74,9 @@ unset FRIENDLIAI_API_KEY
 # Cheapest active model per live input modality.
 models_url=https://api.friendli.ai/serverless/v1/models
 echo "e2e: fetching model catalog: GET $models_url" >&2
-# --retry covers 408/429/5xx and timeouts with 1,2,4,8,16s backoff.
-if http_status="$(curl -fsS --retry 5 -o models.json -w '%{http_code}' "$models_url")"; then
+# --retry covers 408/429/5xx and timeouts with 1,2,4,8,16s backoff, but obeys
+# Retry-After; --retry-max-time and --max-time keep that from stalling the leg.
+if http_status="$(curl -fsS --retry 5 --retry-max-time 120 --max-time 30 -o models.json -w '%{http_code}' "$models_url")"; then
   :
 else
   rc=$?

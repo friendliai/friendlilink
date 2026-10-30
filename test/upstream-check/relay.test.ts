@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -61,3 +61,11 @@ it.each([
     }
   },
 );
+
+it.each(["typo", "-1", "1e9"])("relay rejects --retry-429 %s", (bad) => {
+  const result = spawnSync(process.execPath, [relay, "--retry-429", bad], {
+    encoding: "utf8",
+  });
+  expect(result.status).not.toBe(0);
+  expect(result.stderr).toContain("--retry-429 needs seconds");
+});
