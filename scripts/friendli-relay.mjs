@@ -17,6 +17,11 @@
  *   node scripts/friendli-relay.mjs [--port 8787] [--log capture.jsonl]
  *                                  [--target https://api.friendli.ai/serverless]
  *                                  [--quiet] [--bodies <bytes>]
+ *                                  [--retry-429 <seconds>]
+ *
+ * --retry-429 holds a rate-limited request and resends it after <seconds>, up
+ * to 3 times, so the harness never sees the 429. Off by default: the
+ * relay's job elsewhere is to show exactly what Friendli answered.
  *
  * The Authorization header is never printed or written to the log; the key's
  * SHA-256 prefix is, which is enough to tell two keys apart.
@@ -25,6 +30,7 @@
 import { createServer } from "node:http";
 import { appendFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
+import { setTimeout as sleep } from "node:timers/promises";
 
 const DEFAULTS = {
   port: 8787,
@@ -47,7 +53,12 @@ function parseArgs(argv) {
     else if (flag === "--log") options.log = value();
     else if (flag === "--bodies") options.bodies = Number(value());
     else if (flag === "--quiet") options.quiet = true;
-    else throw new Error(`unknown flag: ${flag}`);
+    else if (flag === "--retry-429") {
+      options.retry429 = Number(value());
+      // NaN or past setTimeout's 2^31-1 ms would fire after 1 ms instead.
+      if (!(options.retry429 >= 0 && options.retry429 <= 2147483))
+        throw new Error(`${flag} needs seconds in [0, 2147483]`);
+    } else throw new Error(`unknown flag: ${flag}`);
   }
   return options;
 }
@@ -193,12 +204,25 @@ async function main() {
       const requestBody = await readBody(request);
       let upstream;
       try {
-        upstream = await fetch(`${options.target}${request.url}`, {
-          method: request.method,
-          headers: forwardableHeaders(request.headers),
-          ...(requestBody.length > 0 ? { body: requestBody } : {}),
-          redirect: "manual",
-        });
+        for (let retry = 1; ; retry++) {
+          upstream = await fetch(`${options.target}${request.url}`, {
+            method: request.method,
+            headers: forwardableHeaders(request.headers),
+            ...(requestBody.length > 0 ? { body: requestBody } : {}),
+            redirect: "manual",
+          });
+          if (
+            upstream.status !== 429 ||
+            options.retry429 === undefined ||
+            retry > 3
+          )
+            break;
+          await upstream.body?.cancel();
+          console.error(
+            `#${id} ${request.method} ${request.url} → 429, retry ${retry}/3 in ${options.retry429}s`,
+          );
+          await sleep(options.retry429 * 1000);
+        }
       } catch (error) {
         // A relay that dies on an upstream hiccup loses the capture with it.
         response.writeHead(502, { "content-type": "application/json" });
@@ -283,7 +307,7 @@ async function main() {
 
   server.listen(options.port, () => {
     console.error(
-      `friendli-relay: http://localhost:${options.port} → ${options.target}`,
+      `friendli-relay: http://localhost:${server.address().port} → ${options.target}`,
     );
     console.error(`friendli-relay: capture → ${options.log}`);
   });

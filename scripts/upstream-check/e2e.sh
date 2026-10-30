@@ -74,7 +74,9 @@ unset FRIENDLIAI_API_KEY
 # Cheapest active model per live input modality.
 models_url=https://api.friendli.ai/serverless/v1/models
 echo "e2e: fetching model catalog: GET $models_url" >&2
-if http_status="$(curl -fsS -o models.json -w '%{http_code}' "$models_url")"; then
+# --retry covers 408/429/5xx and timeouts with 1,2,4,8,16s backoff, but obeys
+# Retry-After; --retry-max-time and --max-time keep that from stalling the leg.
+if http_status="$(curl -fsS --retry 5 --retry-max-time 120 --max-time 30 -o models.json -w '%{http_code}' "$models_url")"; then
   :
 else
   rc=$?
@@ -109,7 +111,7 @@ frlink check status | grep "^  $name (.*): not routed"
 frlink login --api-key "$key"
 
 proxy=http://127.0.0.1:8787
-node "$relay" --port 8787 --log capture.jsonl --bodies 1000000 --quiet 2>relay.log &
+node "$relay" --port 8787 --log capture.jsonl --bodies 1000000 --quiet --retry-429 60 2>relay.log &
 relay_pid=$!
 until curl -s -o /dev/null "$proxy"; do kill -0 "$relay_pid"; sleep 0.2; done
 
@@ -173,6 +175,8 @@ while read -r modality model level <&3; do
         hermes config set auxiliary.vision.provider friendli
         hermes config set auxiliary.vision.base_url "$proxy/v1"
         hermes config set auxiliary.vision.model "$model"
+        # 180s default + up to 3 relay --retry-429 holds of 60s.
+        hermes config set auxiliary.vision.timeout 360
         [[ "$level" == default ]] || hermes config set auxiliary.vision.reasoning_effort "${level/off/none}"
         attachment=(--toolsets video)
         prompt="Use video_analyze exactly once with video_url \"$HOME/input.mp4\" and question \"Describe this video briefly.\" Then reply briefly. Do not use any other tools."
