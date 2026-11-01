@@ -78,7 +78,7 @@ jobs:
           } 2>&1 | sed "s|$FRIENDLIAI_API_KEY|***|g" | tee "$RUNNER_TEMP/e2e.log"
       - name: Keep e2e failure log for the Slack report
         if: failure() && steps.e2e.outcome == 'failure'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: e2e-log-${{ matrix.name }}
           path: ${{ runner.temp }}/e2e.log
