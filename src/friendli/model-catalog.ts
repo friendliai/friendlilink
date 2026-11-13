@@ -150,9 +150,11 @@ export function toFriendliModel(entry: FriendliModelEntry): FriendliModel {
 export async function fetchFriendliModelCatalog(
   apiKey: string,
   baseUrl: string = FRIENDLI_BASE_URL,
+  signal?: AbortSignal,
 ): Promise<FriendliModel[]> {
   const response = await fetch(friendliApiUrl("models", baseUrl), {
     headers: { Authorization: `Bearer ${apiKey}` },
+    signal: signal ?? null,
   });
   if (!response.ok) {
     throw new Error(
