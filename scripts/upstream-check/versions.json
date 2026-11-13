@@ -1,6 +1,6 @@
 {
-  "@anthropic-ai/claude-code": "2.1.322",
-  "@openai/codex": "0.167.1",
+  "@anthropic-ai/claude-code": "2.1.323",
+  "@openai/codex": "0.167.2",
   "@deepseek-ai/dsh-llm": "0.0.1-rc.1",
   "hermes-agent": "0.23.1",
   "opencode-ai": "1.19.5",
